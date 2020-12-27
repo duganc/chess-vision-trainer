@@ -4,8 +4,8 @@ use std::convert::TryInto;
 use regex::Regex;
 
 lazy_static! {
-	static ref FORWARD_PAWN_MOVE: Regex = Regex::new("([a-h])([1-8])").unwrap();
-	static ref DISAMBIGUATED_PAWN_MOVE: Regex = Regex::new("([a-h])([a-h])([1-8])").unwrap();
+	static ref FORWARD_PAWN_MOVE: Regex = Regex::new("^([a-h])([1-8])$").unwrap();
+	static ref DISAMBIGUATED_PAWN_MOVE: Regex = Regex::new("^([a-h])([a-h])([1-8])$").unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -77,8 +77,8 @@ impl Board {
 
 	pub fn get(&self, square: Square) -> Option<(Side, Piece)> {
 		match self.is_occupied(square) {
-			False => None,
-			True => {
+			false => None,
+			true => {
 				let bb = Bitboard::square(square);
 				let side;
 				if (self.white & bb).has_pieces() {
@@ -192,7 +192,7 @@ impl Board {
 					let source_result = self.get_pawn_move_from_square_in_front(side, destination);
 					return source_result.map(|source| Move::new(source, destination));
 				} else if DISAMBIGUATED_PAWN_MOVE.is_match(m) {
-					let characters = FORWARD_PAWN_MOVE.captures(m).unwrap();
+					let characters = DISAMBIGUATED_PAWN_MOVE.captures(m).unwrap();
 					let destination = Square::new(
 						File::from_str(characters.get(2).map_or("", |m| m.as_str())),
 						Rank::from_str(characters.get(3).map_or("", |m| m.as_str()))
@@ -839,12 +839,12 @@ impl Bitboard {
 		return to_return;
 	}
 
-	pub fn file(file: File) -> Self {
-		Bitboard(255 << (file as u64)) // 255 = 1+2+4+8+16+32+64+128 = 2**8 - 1
+	pub fn rank(rank: Rank) -> Self {
+		Bitboard(255 << (8*(rank as u64))) // 255 = 1+2+4+8+16+32+64+128 = 2**8 - 1
 	}
 
-	pub fn rank(rank: Rank) -> Self {
-		Bitboard(72340172838076673 << 2_u64.pow(64)*(rank as u64)) // 72340172838076673 = 1+2**8+2**16+2**24+2**32+2**40+2**48+2**56
+	pub fn file(file: File) -> Self {
+		Bitboard(72340172838076673 << (file as u64)) // 72340172838076673 = 1+2**8+2**16+2**24+2**32+2**40+2**48+2**56
 	}
 
 	pub fn is_empty(&self) -> bool {
@@ -956,17 +956,70 @@ mod tests {
 	}
 
 	#[test]
+	fn board_parses_moves() {
+		let mut board = Board::empty();
+		board.add(Side::White, Piece::Pawn, Square::from_string("e4"));
+		assert_eq!(board.try_parse_move(Side::White, "e5").unwrap(), Move::new(Square::from_string("e4"), Square::from_string("e5")));
+
+		board.add(Side::Black, Piece::Pawn, Square::from_string("f5"));
+		assert_eq!(board.try_parse_move(Side::Black, "f4").unwrap(), Move::new(Square::from_string("f5"), Square::from_string("f4")));
+		assert_eq!(board.try_parse_move(Side::Black, "fe4").unwrap(), Move::new(Square::from_string("f5"), Square::from_string("e4")));
+
+		board.add(Side::Black, Piece::Pawn, Square::from_string("h7"));
+		assert_eq!(board.try_parse_move(Side::Black, "h5").unwrap(), Move::new(Square::from_string("h7"), Square::from_string("h5")));
+
+	}
+
+	#[test]
+	fn board_adds() {
+		let mut board = Board::empty();
+
+		assert_eq!(board.pieces().0, 0);
+
+		board.add(Side::White, Piece::Rook, Square::new(File::A, Rank::One));
+		assert_eq!(board.white.0, 1);
+		assert_eq!(board.rooks.0, 1);
+		assert_eq!(board.pieces().0, 1);
+
+		board.add(Side::White, Piece::Pawn, Square::new(File::A, Rank::Two));
+		assert_eq!(board.white.0, 1 + (1 << 8));
+		assert_eq!(board.rooks.0, 1);
+		assert_eq!(board.pawns.0, (1 << 8));
+		assert_eq!(board.pieces().0, 1 + (1 << 8));
+	}
+
+	#[test]
 	fn board_detects_occupied_squares() {
 		let mut board = Board::empty();
 
 		board.add(Side::White, Piece::Pawn, Square::new(File::E, Rank::Four));
 		board.add(Side::White, Piece::Pawn, Square::new(File::D, Rank::Four));
+		board.add(Side::White, Piece::Knight, Square::from_string("g7"));
 		assert!(board.is_occupied(Square::new(File::E, Rank::Four)));
 		assert!(board.is_occupied(Square::new(File::D, Rank::Four)));
 		assert!(!board.is_occupied(Square::new(File::D, Rank::Five)));
 		assert!(!board.is_occupied(Square::new(File::C, Rank::One)));
 		assert!(!board.is_occupied(Square::new(File::H, Rank::Eight)));
+		assert!(board.is_occupied(Square::new(File::G, Rank::Seven)));
 	}
+
+	#[test]
+	fn bitboard_instantiates_square() {
+		assert_eq!(Bitboard::square(Square::new(File::A, Rank::One)).0, 1);
+		assert_eq!(Bitboard::square(Square::new(File::B, Rank::One)).0, 2);
+		assert_eq!(Bitboard::square(Square::new(File::A, Rank::Two)).0, (1 << 8));
+		assert_eq!(Bitboard::square(Square::new(File::B, Rank::Two)).0, (1 << 9));
+		assert_eq!(Bitboard::square(Square::new(File::H, Rank::Eight)).0, (1 << 63));
+	}
+
+	#[test]
+	fn bitboard_instantiates_rank() {
+		let expected_rank_one = 1 + 2 + 4 + 8 + 16 + 32 + 64 + 128;
+		assert_eq!(Bitboard::rank(Rank::One).0, expected_rank_one);
+		assert_eq!(Bitboard::rank(Rank::Two).0, expected_rank_one << 8);
+		assert_eq!(Bitboard::rank(Rank::Eight).0, expected_rank_one << 56);
+		
+	}	
 
 	#[test]
 	fn square_instantiates_from_string() {
@@ -985,9 +1038,9 @@ mod tests {
 		let h1 = Square::from_string("h1");
 		let d8 = Square::from_string("d8");
 
-		assert_eq!(a8.get_adjacent(Direction::Right), None);
-		assert_eq!(a8.get_adjacent(Direction::Left), Some(Square(File::A, Rank::Seven)));
-		assert_eq!(h1.get_adjacent(Direction::Down), None);
+		assert_eq!(a8.get_adjacent(Direction::Left), None);
+		assert_eq!(a8.get_adjacent(Direction::Right), Some(Square(File::B, Rank::Eight)));
+		assert_eq!(h1.get_adjacent(Direction::Right), None);
 		assert_eq!(d8.get_adjacent(Direction::UpLeft), None);
 	}
 }
