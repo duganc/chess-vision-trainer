@@ -148,6 +148,7 @@ impl Board {
 	}
 
 	pub fn get_transformation(&self, m: Move) -> Self {
+		println!("get_transformation: {:?}", m);
 		let mut to_return = self.clone();
 		to_return.transform(m);
 		return to_return;
@@ -336,7 +337,7 @@ impl Board {
 			_ => panic!("There's no piece on {:?}!", source)
 		};
 		return destinations.into_iter()
-			// .filter(|destination| !self.get_transformation(Move::new(source, *destination)).is_in_check(side))
+			.filter(|destination| !self.get_transformation(Move::new(source, *destination)).is_in_check(side))
 			.map(|destination| Move::new(source, destination))
 			.collect();
 
@@ -353,12 +354,14 @@ impl Board {
 	fn get_diagonal_pawn_takes(&self, side: Side, square: Square) -> Bitboard {
 		let directions = Direction::get_forward_diagonals(side);
 
-		match (square.get_adjacent(directions.0), square.get_adjacent(directions.1)) {
+		let potential_captures = match (square.get_adjacent(directions.0), square.get_adjacent(directions.1)) {
 			(None, None) => Bitboard::empty(),
 			(None, Some(r)) => Bitboard::square(r),
 			(Some(l), None) => Bitboard::square(l),
 			(Some(l), Some(r)) => Bitboard::from_squares(vec![l, r])
-		}
+		};
+		let opponent_pieces = self.get_side_bitboard(Side::get_opponent(side));
+		return potential_captures & opponent_pieces;
 	}
 
 	fn get_forward_pawn_moves(&self, side: Side, square: Square) -> Bitboard {
@@ -451,8 +454,8 @@ impl Board {
 		let mut file = Some(square.0);
 		let mut rank = Some(square.1);
 		let mut to_return = Bitboard::empty();
-		while !file.is_none() && !rank.is_none() {
-			let (file, rank) = match direction {
+		while (!file.is_none()) && (!rank.is_none()) {
+			let (f, r) = match direction {
 				Direction::Up => (file, rank.unwrap().next()),
 				Direction::Down => (file, rank.unwrap().previous()),
 				Direction::Left => (file.unwrap().previous(), rank),
@@ -462,6 +465,11 @@ impl Board {
 				Direction::DownLeft => (file.unwrap().previous(), rank.unwrap().previous()),
 				Direction::DownRight => (file.unwrap().previous(), rank.unwrap().next()),
 			};
+			file = f;
+			rank = r;
+			if f.is_none() || r.is_none() {
+				break;
+			}
 			let test_square = Square(file.unwrap(), rank.unwrap());
 			to_return = to_return | Bitboard::square(test_square);
 			if self.is_occupied(test_square) {
@@ -563,7 +571,7 @@ impl Square {
 			Direction::UpLeft => (file.unwrap().previous(), rank.unwrap().next()),
 			Direction::UpRight => (file.unwrap().next(), rank.unwrap().next()),
 			Direction::DownLeft => (file.unwrap().previous(), rank.unwrap().previous()),
-			Direction::DownRight => (file.unwrap().previous(), rank.unwrap().next()),
+			Direction::DownRight => (file.unwrap().next(), rank.unwrap().previous()),
 		};
 		
 		return match (file, rank) {
@@ -992,6 +1000,26 @@ mod tests {
 	}
 
 	#[test]
+	fn board_gets_legal_moves() {
+		let mut board = Board::empty();
+		board.add(Side::Black, Piece::Pawn, Square::from_string("f5"));
+		let moves = board.get_legal_moves(Square::from_string("f5"));
+		assert_eq!(moves[0], Move(Square::from_string("f5"), Square::from_string("f4")), "{:?}", moves);
+
+		board.add(Side::White, Piece::Queen, Square::from_string("e4"));
+		board.add(Side::White, Piece::Knight, Square::from_string("g4"));
+
+		let pawn_takes = board.get_diagonal_pawn_takes(Side::Black, Square::from_string("f5"));
+		assert_eq!(pawn_takes.to_squares().len(), 2);
+
+		let moves = board.get_legal_moves(Square::from_string("f5"));
+		assert_eq!(moves.len(), 3, "{:?}", moves);
+		assert_eq!(moves[0], Move(Square::from_string("f5"), Square::from_string("e4")), "{:?}", moves);
+		assert_eq!(moves[1], Move(Square::from_string("f5"), Square::from_string("f4")), "{:?}", moves);
+		assert_eq!(moves[2], Move(Square::from_string("f5"), Square::from_string("g4")), "{:?}", moves);
+	}
+
+	#[test]
 	fn board_adds() {
 		let mut board = Board::empty();
 
@@ -1007,6 +1035,76 @@ mod tests {
 		assert_eq!(board.rooks.0, 1);
 		assert_eq!(board.pawns.0, (1 << 8));
 		assert_eq!(board.pieces().0, 1 + (1 << 8));
+	}
+
+	#[test]
+	fn board_transforms() {
+		let a8 = Square::from_string("a8");
+		let h1 = Square::from_string("h1");
+		let h2 = Square::from_string("h2");
+
+		let mut board = Board::empty();
+		board.add(Side::White, Piece::Pawn, a8);
+		board.transform(Move::new(a8, h1));
+
+		assert_eq!(board.pieces(), Bitboard::square(h1));
+		assert_eq!(board.black, Bitboard::empty());
+		assert_eq!(board.white, Bitboard::square(h1));
+		assert_eq!(board.pawns, Bitboard::square(h1));
+		assert_eq!(board.queens, Bitboard::empty());
+
+		let new_board = board.get_transformation(Move::new(h1, h2));
+		assert_eq!(new_board.pieces(), Bitboard::square(h2));
+		assert_eq!(new_board.black, Bitboard::empty());
+		assert_eq!(new_board.white, Bitboard::square(h2));
+		assert_eq!(new_board.pawns, Bitboard::square(h2));
+		assert_eq!(new_board.queens, Bitboard::empty());
+
+		assert_eq!(board.pieces(), Bitboard::square(h1));
+		assert_eq!(board.black, Bitboard::empty());
+		assert_eq!(board.white, Bitboard::square(h1));
+		assert_eq!(board.pawns, Bitboard::square(h1));
+		assert_eq!(board.queens, Bitboard::empty());
+	}
+
+	#[test]
+	fn board_vision() {
+		let mut board = Board::empty();
+		board.add(Side::Black, Piece::King, Square::from_string("b3"));
+		board.add(Side::Black, Piece::Bishop, Square::from_string("h8"));
+		board.add(Side::Black, Piece::Pawn, Square::from_string("f7"));
+		board.add(Side::White, Piece::Pawn, Square::from_string("g7"));
+		board.add(Side::White, Piece::Pawn, Square::from_string("f6"));
+
+		let vision = board.get_adjacent_vision(Square::from_string("b3"));
+		assert_eq!(vision.to_squares().len(), 8);
+
+		let vision = board.get_adjacent_vision(Square::from_string("h8"));
+		assert_eq!(vision.to_squares().len(), 3);
+
+		let vision = board.get_adjacent_vision(Square::from_string("f7"));
+		assert_eq!(vision.to_squares().len(), 8);
+
+
+		let vision = board.get_immediately_diagonal_vision(Square::from_string("b3"));
+		assert_eq!(vision.to_squares().len(), 4);
+
+		let vision = board.get_immediately_diagonal_vision(Square::from_string("h8"));
+		assert_eq!(vision.to_squares().len(), 1);
+
+		let vision = board.get_immediately_diagonal_vision(Square::from_string("f7"));
+		assert_eq!(vision.to_squares().len(), 4);
+
+
+		let vision = board.get_lateral_vision(Square::from_string("b3"));
+		assert_eq!(vision.to_squares().len(), 14);
+
+		let vision = board.get_lateral_vision(Square::from_string("h8"));
+		assert_eq!(vision.to_squares().len(), 14);
+
+		let vision = board.get_lateral_vision(Square::from_string("f7"));
+		assert_eq!(vision.to_squares().len(), 8);
+		
 	}
 
 	#[test]
@@ -1054,8 +1152,8 @@ mod tests {
 
 	#[test]
 	fn bitboard_to_squares() {
-		let bitboard = Bitboard::square(Square::from_string("b7"));
-		let bitboard = bitboard | Bitboard::square(Square::from_string("h2"));
+		let squares = vec![Square::from_string("b7"), Square::from_string("h2")];
+		let bitboard = Bitboard::from_squares(squares);
 
 		let squares = bitboard.to_squares();
 		assert_eq!(squares.len(), 2);
