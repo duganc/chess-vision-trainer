@@ -6,6 +6,8 @@ use regex::Regex;
 lazy_static! {
 	static ref FORWARD_PAWN_MOVE: Regex = Regex::new("^([a-h])([1-8])$").unwrap();
 	static ref DISAMBIGUATED_PAWN_MOVE: Regex = Regex::new("^([a-h])([a-h])([1-8])$").unwrap();
+	static ref PIECE_MOVE: Regex = Regex::new("^([N,B,R,Q,K])([a-h])([1-8])$").unwrap();
+	static ref DISAMBIGUATED_PIECE_MOVE: Regex = Regex::new("^([a-h])([N,B,R,Q,K])([a-h])([1-8])$").unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -19,7 +21,11 @@ pub struct Board {
 	queens: Bitboard,
 	kings: Bitboard,
 	prior_move_white: Option<Move>,
-	prior_move_black: Option<Move>
+	prior_move_black: Option<Move>,
+	castling_rights_white_kingside: bool,
+	castling_rights_white_queenside: bool,
+	castling_rights_black_kingside: bool,
+	castling_rights_black_queenside: bool,
 }
 
 impl Board {
@@ -43,7 +49,63 @@ impl Board {
 			queens,
 			kings,
 			prior_move_white: None,
-			prior_move_black: None
+			prior_move_black: None,
+			castling_rights_white_kingside: true,
+			castling_rights_white_queenside: true,
+			castling_rights_black_kingside: true,
+			castling_rights_black_queenside: true,
+		}
+	}
+
+	pub fn starting_position() -> Self {
+		let white = Bitboard::rank(Rank::One) | Bitboard::rank(Rank::Two);
+		let black = Bitboard::rank(Rank::Seven) | Bitboard::rank(Rank::Eight);
+
+		let pawns = Bitboard::rank(Rank::Two) | Bitboard::rank(Rank::Seven);
+
+		let kings = Bitboard::from_squares(vec![Square::new(File::E, Rank::One), Square::new(File::E, Rank::Eight)]);
+		let queens = Bitboard::from_squares(vec![Square::new(File::D, Rank::One), Square::new(File::D, Rank::Eight)]);
+		let rooks = Bitboard::from_squares(
+			vec![
+				Square::new(File::A, Rank::One),
+				Square::new(File::H, Rank::One),
+				Square::new(File::A, Rank::Eight),
+				Square::new(File::H, Rank::Eight),
+			]
+			
+		);
+		let bishops = Bitboard::from_squares(
+			vec![
+				Square::new(File::C, Rank::One),
+				Square::new(File::F, Rank::One),
+				Square::new(File::C, Rank::Eight),
+				Square::new(File::F, Rank::Eight),
+			]
+		);
+		let knights = Bitboard::from_squares(
+			vec![
+				Square::new(File::B, Rank::One),
+				Square::new(File::G, Rank::One),
+				Square::new(File::B, Rank::Eight),
+				Square::new(File::G, Rank::Eight),
+			]
+		);
+
+		Self {
+			white,
+			black,
+			pawns,
+			kings,
+			queens,
+			rooks,
+			bishops,
+			knights,
+			prior_move_white: None,
+			prior_move_black: None,
+			castling_rights_white_kingside: true,
+			castling_rights_white_queenside: true,
+			castling_rights_black_kingside: true,
+			castling_rights_black_queenside: true,
 		}
 	}
 
@@ -148,7 +210,6 @@ impl Board {
 	}
 
 	pub fn get_transformation(&self, m: Move) -> Self {
-		println!("get_transformation: {:?}", m);
 		let mut to_return = self.clone();
 		to_return.transform(m);
 		return to_return;
@@ -169,6 +230,30 @@ impl Board {
 
 		self.set_side_bitboard(side, side_bb);
 		self.set_pieces_bitboard(piece, pieces_bb);
+		self.disambiguate_captures(side, piece);
+	}
+
+	fn disambiguate_captures(&mut self, side: Side, piece: Piece) {
+		let side_bb = self.get_side_bitboard(side);
+		let opponent = Side::get_opponent(side);
+		let opponent_bb = self.get_side_bitboard(opponent);
+
+		self.set_side_bitboard(opponent, opponent_bb & (side_bb.get_inverse()));
+
+		for p in Piece::all() {
+			self.priviledge_piece(piece, p);
+		}
+	}
+
+	fn priviledge_piece(&mut self, priviledged: Piece, to_overwrite: Piece) {
+		if priviledged == to_overwrite {
+			return;
+		}
+
+		let priviledged_bb = self.get_pieces_bitboard(priviledged);
+		let to_overwrite_bb = self.get_pieces_bitboard(to_overwrite);
+
+		self.set_pieces_bitboard(to_overwrite, to_overwrite_bb & (priviledged_bb.get_inverse()));
 	}
 
 	pub fn try_parse_move(&self, side: Side, r#move: &str) -> Result<Move, String> {
@@ -219,10 +304,51 @@ impl Board {
 						}
 					}
 					
+				} else if PIECE_MOVE.is_match(m) {
+					let characters = PIECE_MOVE.captures(m).unwrap();
+					let destination = Square::new(
+						File::from_str(characters.get(2).map_or("", |m| m.as_str())),
+						Rank::from_str(characters.get(3).map_or("", |m| m.as_str()))
+					);
+					let piece = Piece::from_str(characters.get(1).map_or("", |m| m.as_str()));
+
+					if (self.get_side_bitboard(side) & Bitboard::square(destination)).has_pieces() {
+						return Err(format!("{:?} cannot move to an occupied square {:?}.", piece, destination));
+					}
+
+					let source_result = self.get_unambiguous_piece_source(side, piece, destination);
+
+					match source_result {
+						Err(e) => return Err(e),
+						Ok(source) => {
+							return Ok(Move::new(source, destination));
+						}
+					}
+					
 				} else {
 					return Err(format!("Invalid or unsupported move: {:?}", m));
 				}
 			}
+		}
+	}
+
+	fn get_unambiguous_piece_source(&self, side: Side, piece: Piece, destination: Square) -> Result<Square, String> {
+		let pieces = self.get_side_pieces_bitboard(side, piece);
+		let potential_sources = match piece {
+			Piece::Pawn => panic!("get_unambiguous_piece_source can't be used on Pawns.  Use get_pawn_move_from_square_in_front instead."),
+			Piece::Knight => (self.get_knight_vision(destination) & pieces).to_squares(),
+			Piece::Bishop => (self.get_diagonal_vision(destination) & pieces).to_squares(),
+			Piece::Rook => (self.get_lateral_vision(destination) & pieces).to_squares(),
+			Piece::Queen => ((self.get_diagonal_vision(destination) | self.get_lateral_vision(destination)) & pieces).to_squares(),
+			Piece::King => (self.get_adjacent_vision(destination) & pieces).to_squares(),
+		};
+		if potential_sources.len() == 0 {
+			return Err(format!("No {:?} can reach the destination {:?}", piece, destination));
+		} else if potential_sources.len() > 2 {
+			return Err(format!("Ambiguous potential sources: {:?}", potential_sources));
+		} else {
+			let source = potential_sources[0];
+			return Ok(source);
 		}
 	}
 
@@ -525,6 +651,38 @@ pub enum Piece {
 	Rook,
 	Queen,
 	King
+}
+
+impl Piece {
+
+	pub fn from_str(s: &str) -> Self {
+		assert_eq!(s.len(), 1);
+		let c = s.chars().nth(0).unwrap();
+		Self::from_char(c)
+	}
+
+	pub fn from_char(c: char) -> Self {
+		match c {
+			'P' => Piece::Pawn,
+			'N' => Piece::Knight,
+			'B' => Piece::Bishop,
+			'R' => Piece::Rook,
+			'Q' => Piece::Queen,
+			'K' => Piece::King,
+			_ => panic!("Invalid character: {:?}", c)
+		}
+	}
+
+	pub fn all() -> Vec<Self> {
+		vec![
+			Piece::Pawn,
+			Piece::Knight,
+			Piece::Bishop,
+			Piece::Rook,
+			Piece::Queen,
+			Piece::King
+		]
+	}
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -977,11 +1135,45 @@ mod tests {
 		board.add(Side::White, Piece::Knight, Square::from_string("g7"));
 
 		assert!(board.is_legal_move(Move::new(Square::from_string("g7"), Square::from_string("h5"))));
-		// assert!(board.is_legal_move(board.try_parse_move(Side::White, "Ke2").unwrap()));
-		// assert!(!board.is_legal_move(board.try_parse_move(Side::White, "Ka1").unwrap()));
-		// assert!(!board.is_legal_move(board.try_parse_move(Side::White, "e5").unwrap()));
-		// assert!(board.is_in_check(Side::Black));
-		// assert!(board.is_attacking(Side::White, Square::from_string("e5")));
+		assert!(board.is_legal_move(board.try_parse_move(Side::White, "Ke2").unwrap()));
+		assert!(board.try_parse_move(Side::White, "Ka1").is_err());
+		assert!(board.try_parse_move(Side::White, "e5").is_err());
+		assert!(board.is_in_check(Side::Black));
+		assert!(!board.is_in_check(Side::White));
+
+		assert!(board.is_attacking(Side::White, Square::from_string("d5")));
+		assert!(!board.is_attacking(Side::Black, Square::from_string("d5")));
+		assert!(board.is_attacking(Side::White, Square::from_string("f5")));
+		assert!(!board.is_attacking(Side::Black, Square::from_string("f5")));
+
+		assert!(board.is_attacking(Side::White, Square::from_string("e6")));
+		assert!(!board.is_attacking(Side::Black, Square::from_string("e6")));
+	}
+
+	#[test]
+	fn board_initializes_starting_position() {
+		let board = Board::starting_position();
+
+		assert_eq!(board.pieces().to_squares().len(), 32);
+
+		assert_eq!(board.get_side_pieces_bitboard(Side::White, Piece::King).to_squares(), vec![Square::from_string("e1")]);
+		assert_eq!(board.get_side_pieces_bitboard(Side::White, Piece::Queen).to_squares(), vec![Square::from_string("d1")]);
+		assert_eq!(board.get_side_pieces_bitboard(Side::White, Piece::Rook).to_squares(), vec![Square::from_string("a1"), Square::from_string("h1")]);
+		assert_eq!(board.get_side_pieces_bitboard(Side::White, Piece::Bishop).to_squares(), vec![Square::from_string("c1"), Square::from_string("f1")]);
+		assert_eq!(board.get_side_pieces_bitboard(Side::White, Piece::Knight).to_squares(), vec![Square::from_string("b1"), Square::from_string("g1")]);
+		let white_pawns = board.get_side_pieces_bitboard(Side::White, Piece::Pawn).to_squares();
+		assert_eq!(white_pawns.len(), 8);
+		assert!(white_pawns.iter().all(|x| x.1 == Rank::Two));
+
+
+		assert_eq!(board.get_side_pieces_bitboard(Side::Black, Piece::King).to_squares(), vec![Square::from_string("e8")]);
+		assert_eq!(board.get_side_pieces_bitboard(Side::Black, Piece::Queen).to_squares(), vec![Square::from_string("d8")]);
+		assert_eq!(board.get_side_pieces_bitboard(Side::Black, Piece::Rook).to_squares(), vec![Square::from_string("a8"), Square::from_string("h8")]);
+		assert_eq!(board.get_side_pieces_bitboard(Side::Black, Piece::Bishop).to_squares(), vec![Square::from_string("c8"), Square::from_string("f8")]);
+		assert_eq!(board.get_side_pieces_bitboard(Side::Black, Piece::Knight).to_squares(), vec![Square::from_string("b8"), Square::from_string("g8")]);
+		let black_pawns = board.get_side_pieces_bitboard(Side::Black, Piece::Pawn).to_squares();
+		assert_eq!(black_pawns.len(), 8);
+		assert!(black_pawns.iter().all(|x| x.1 == Rank::Seven));
 	}
 
 	#[test]
