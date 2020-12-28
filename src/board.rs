@@ -7,7 +7,8 @@ lazy_static! {
 	static ref FORWARD_PAWN_MOVE: Regex = Regex::new("^([a-h])([1-8])$").unwrap();
 	static ref DISAMBIGUATED_PAWN_MOVE: Regex = Regex::new("^([a-h])([a-h])([1-8])$").unwrap();
 	static ref PIECE_MOVE: Regex = Regex::new("^([N,B,R,Q,K])([a-h])([1-8])$").unwrap();
-	static ref DISAMBIGUATED_PIECE_MOVE: Regex = Regex::new("^([a-h])([N,B,R,Q,K])([a-h])([1-8])$").unwrap();
+	static ref DISAMBIGUATED_PIECE_MOVE: Regex = Regex::new("^([N,B,R,Q,K])([a-h,1-8])([a-h])([1-8])$").unwrap();
+	// TODO: Handle disambiguation of multiple queens e.g. Qa1b2
 }
 
 #[derive(Debug, Clone)]
@@ -171,6 +172,24 @@ impl Board {
 				Some((side, piece))
 			}
 		}
+	}
+
+	pub fn is_checkmated(&self, side: Side) -> bool {
+		let kings = self.get_side_pieces_bitboard(side, Piece::King).to_squares();
+		assert_eq!(kings.len(), 1, "Checkmating is only supported for games with on king per side, but this game has: {:?}", kings);
+		let king = kings[0];
+		self.is_in_check(side) && self.has_no_legal_moves(king)
+	}
+
+	pub fn is_stalemated(&self, side: Side) -> bool {
+		let kings = self.get_side_pieces_bitboard(side, Piece::King).to_squares();
+		assert_eq!(kings.len(), 1, "Stalemating is only supported for games with on king per side, but this game has: {:?}", kings);
+		let king = kings[0];
+		(!self.is_in_check(side)) && self.has_no_legal_moves(king)
+	}
+
+	fn has_no_legal_moves(&self, square: Square) -> bool {
+		self.get_legal_moves(square).len() == 0
 	}
 
 	pub fn is_in_check(&self, side: Side) -> bool {
@@ -362,6 +381,34 @@ impl Board {
 						}
 					}
 					
+				} else if DISAMBIGUATED_PIECE_MOVE.is_match(m) {
+					let characters = DISAMBIGUATED_PIECE_MOVE.captures(m).unwrap();
+					let destination = Square::new(
+						File::from_str(characters.get(3).map_or("", |m| m.as_str())),
+						Rank::from_str(characters.get(4).map_or("", |m| m.as_str()))
+					);
+					let piece = Piece::from_str(characters.get(1).map_or("", |m| m.as_str()));
+					let source_file_or_rank = characters.get(2).map_or("", |m| m.as_str());
+
+					if (self.get_side_bitboard(side) & Bitboard::square(destination)).has_pieces() {
+						return Err(format!("{:?} cannot move to an occupied square {:?}.", piece, destination));
+					}
+
+					let source_result;
+					if source_file_or_rank.chars().nth(0).unwrap().is_numeric() {
+						let source_rank = Rank::from_str(source_file_or_rank);
+						source_result = self.get_piece_source_on_rank(side, piece, destination, source_rank);
+					} else {
+						let source_file = File::from_str(source_file_or_rank);
+						source_result = self.get_piece_source_on_file(side, piece, destination, source_file);
+					}
+
+					match source_result {
+						Err(e) => return Err(e),
+						Ok(source) => {
+							return Ok(Move::new(source, destination));
+						}
+					}
 				} else {
 					return Err(format!("Invalid or unsupported move: {:?}", m));
 				}
@@ -369,7 +416,43 @@ impl Board {
 		}
 	}
 
+	fn get_piece_source_on_file(&self, side: Side, piece: Piece, destination: Square, source_file: File) -> Result<Square, String> {
+		let potential_sources = (self.get_potential_sources(side, piece, destination) & Bitboard::file(source_file)).to_squares();
+		return self.get_unambiguous_source_from_potential_sources(side, piece, destination, potential_sources);
+	}
+
+	fn get_piece_source_on_rank(&self, side: Side, piece: Piece, destination: Square, source_rank: Rank) -> Result<Square, String> {
+		let potential_sources = (self.get_potential_sources(side, piece, destination) & Bitboard::rank(source_rank)).to_squares();
+		return self.get_unambiguous_source_from_potential_sources(side, piece, destination, potential_sources);
+	}
 	fn get_unambiguous_piece_source(&self, side: Side, piece: Piece, destination: Square) -> Result<Square, String> {
+		let potential_sources = self.get_potential_sources(side, piece, destination).to_squares();
+		return self.get_unambiguous_source_from_potential_sources(side, piece, destination, potential_sources);
+		
+	}
+
+	fn get_unambiguous_source_from_potential_sources(&self, side: Side, piece: Piece, destination: Square, potential_sources: Vec<Square>) -> Result<Square, String> {
+		if potential_sources.len() == 0 {
+			return Err(
+				format!(
+					"No {:?} {:?} can reach the destination {:?}.  All pieces:\n{:?}\nSide: {:?}\nOnly side and piece: {:?}\n",
+					side,
+					piece,
+					destination,
+					self.pieces().print(),
+					self.get_side_bitboard(side).print(),
+					self.get_side_pieces_bitboard(side, piece).print()
+				)
+			);
+		} else if potential_sources.len() > 2 {
+			return Err(format!("Ambiguous potential sources for {:?} {:?}: {:?}.  Board:\n{:?}", side, piece, potential_sources, self.pieces().print()));
+		} else {
+			let source = potential_sources[0];
+			return Ok(source);
+		}
+	}
+
+	fn get_potential_sources(&self, side: Side, piece: Piece, destination: Square) -> Bitboard {
 		let pieces = self.get_side_pieces_bitboard(side, piece);
 		let vision = match piece {
 			Piece::Pawn => panic!("get_unambiguous_piece_source can't be used on Pawns.  Use get_pawn_move_from_square_in_front instead."),
@@ -379,26 +462,7 @@ impl Board {
 			Piece::Queen => (self.get_diagonal_vision(destination) | self.get_lateral_vision(destination)),
 			Piece::King => self.get_adjacent_vision(destination),
 		};
-		let potential_sources = (vision & pieces).to_squares();
-		if potential_sources.len() == 0 {
-			return Err(
-				format!(
-					"No {:?} {:?} can reach the destination {:?}.  Vision: {:?}.  All pieces:\n{:?}\nSide: {:?}\nOnly side and piece: {:?}\n",
-					side,
-					piece,
-					destination,
-					vision.print(),
-					self.pieces().print(),
-					self.get_side_bitboard(side).print(),
-					pieces.print()
-				)
-			);
-		} else if potential_sources.len() > 2 {
-			return Err(format!("Ambiguous potential sources for {:?} {:?}: {:?}.  Board:\n{:?}", side, piece, potential_sources, self.pieces().print()));
-		} else {
-			let source = potential_sources[0];
-			return Ok(source);
-		}
+		return vision & pieces;
 	}
 
 	fn get_pawn_move_from_square_in_front(&self, side: Side, destination: Square) -> Result<Square, String> {
@@ -861,6 +925,7 @@ impl Move {
 	pub fn new(from: Square, to: Square) -> Self {
 		Move(from, to)
 	}
+
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
