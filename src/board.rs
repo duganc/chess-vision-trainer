@@ -174,7 +174,7 @@ impl Board {
 	}
 
 	pub fn is_in_check(&self, side: Side) -> bool {
-		let kings = self.kings.to_squares();
+		let kings = self.get_side_pieces_bitboard(side, Piece::King).to_squares();
 		let opponent = Side::get_opponent(side);
 		return kings.iter().any(|k| self.is_attacking(opponent, *k));
 	}
@@ -216,16 +216,21 @@ impl Board {
 
 	fn force_make_move(&mut self, m: Move) {
 		let source = m.0;
-		let (side, piece) = self.get(source).unwrap();
+		let (side, _piece) = self.get(source).unwrap();
 		let kingside_castle = Castle::Kingside.get_king_move(side);
 		let queenside_castle = Castle::Queenside.get_king_move(side);
-		match m {
-			kingside_castle => {
-				let king_move = m;
-				let rook_move = Castle::Kingside.get_rook_move(side);
-				self.transform(king_move);
-				self.transform(rook_move);
-			}
+		if m == kingside_castle {
+			let king_move = m;
+			let rook_move = Castle::Kingside.get_rook_move(side);
+			self.transform(king_move);
+			self.transform(rook_move);
+		} else if m == queenside_castle {
+			let king_move = m;
+			let rook_move = Castle::Queenside.get_rook_move(side);
+			self.transform(king_move);
+			self.transform(rook_move);
+		} else {
+			self.transform(m);
 		}
 	}
 
@@ -375,9 +380,9 @@ impl Board {
 			Piece::King => (self.get_adjacent_vision(destination) & pieces).to_squares(),
 		};
 		if potential_sources.len() == 0 {
-			return Err(format!("No {:?} can reach the destination {:?}", piece, destination));
+			return Err(format!("No {:?} {:?} can reach the destination {:?}.  Board:\n{:?}", side, piece, destination, self.pieces().print()));
 		} else if potential_sources.len() > 2 {
-			return Err(format!("Ambiguous potential sources: {:?}", potential_sources));
+			return Err(format!("Ambiguous potential sources for {:?} {:?}: {:?}.  Board:\n{:?}", side, piece, potential_sources, self.pieces().print()));
 		} else {
 			let source = potential_sources[0];
 			return Ok(source);
@@ -465,7 +470,8 @@ impl Board {
 
 		let to_return = match piece {
 			Piece::Pawn => {
-				self.get_en_passant_takes(side, square) | self.get_diagonal_pawn_takes(side, square) | self.get_forward_pawn_moves(side, square)
+				let forward_pawn_moves = self.get_forward_pawn_moves(side, square);
+				self.get_en_passant_takes(side, square) | self.get_diagonal_pawn_takes(side, square) | forward_pawn_moves
 			},
 			Piece::Knight => {
 				self.get_knight_moves(side, square)
@@ -1212,14 +1218,18 @@ impl Bitboard {
 		return (self & &(Bitboard::square(source).get_inverse())) | Bitboard::square(destination);
 	}
 
-	// pub fn print(&self) -> String {
+	pub fn print(&self) -> String {
 		
-	// 	+---+---+---+---+---+---+---+---+
-	// 	| R | N | B | K | Q | B | N | R |
-	// 	+---+---+---+---+---+---+---+---+
-	// 	| P | P | P | P | P | P | P | P |
-	// 	+---+---+---+---+---+---+---+---+
-	// }
+		let horizontal_border = "+---+---+---+---+---+---+---+---+\n".to_string();
+		let mut to_return = horizontal_border.clone();
+		for rank in Rank::all().into_iter().rev() {
+			let rank_bb = Self::rank(rank);
+			let squares: Vec<&str> = File::all().into_iter().map(|file| if (self & &rank_bb & Self::file(file)).has_pieces() { "#" } else { " " }).collect();
+			to_return += &format!("| {:?} | {:?} | {:?} | {:?} | {:?} | {:?} | {:?} | {:?} |\n", squares[0].to_string(), squares[1].to_string(), squares[2].to_string(), squares[3].to_string(), squares[4].to_string(), squares[5].to_string(), squares[6].to_string(), squares[7]).to_string();
+			to_return += &horizontal_border;
+		}
+		return to_return.to_string();
+	}
 
 }
 
@@ -1360,6 +1370,16 @@ mod tests {
 		assert_eq!(moves[0], Move(Square::from_string("f5"), Square::from_string("e4")), "{:?}", moves);
 		assert_eq!(moves[1], Move(Square::from_string("f5"), Square::from_string("f4")), "{:?}", moves);
 		assert_eq!(moves[2], Move(Square::from_string("f5"), Square::from_string("g4")), "{:?}", moves);
+
+		board.add(Side::White, Piece::Pawn, Square::from_string("a2"));
+		let moves = board.get_legal_moves(Square::from_string("a2"));
+		assert_eq!(
+			moves,
+			vec![
+				Move(Square::from_string("a2"), Square::from_string("a3")),
+				Move(Square::from_string("a2"), Square::from_string("a4")),
+			]
+		)
 	}
 
 	#[test]
@@ -1423,7 +1443,33 @@ mod tests {
 		assert!((board.get_side_pieces_bitboard(Side::Black, Piece::King) & Bitboard::square(Square::from_string("g8"))).has_pieces());
 		assert!((board.get_side_pieces_bitboard(Side::Black, Piece::Rook) & Bitboard::square(Square::from_string("f8"))).has_pieces());
 
+	}
 
+	#[test]
+	fn board_detects_checks() {
+		let mut board = Board::empty();
+
+		assert!(!board.is_in_check(Side::White));
+		assert!(!board.is_in_check(Side::Black));
+
+		board.add(Side::White, Piece::King, Square::from_string("e1"));
+		board.add(Side::Black, Piece::King, Square::from_string("e8"));
+
+		board.add(Side::White, Piece::Pawn, Square::from_string("e7"));
+		assert!(!board.is_in_check(Side::White));
+		assert!(!board.is_in_check(Side::Black));
+
+		board.add(Side::Black, Piece::Pawn, Square::from_string("d2"));
+		assert!(board.is_in_check(Side::White));
+		assert!(!board.is_in_check(Side::Black));
+
+		let mut board = Board::starting_position();
+		assert!(!board.is_in_check(Side::White));
+		assert!(!board.is_in_check(Side::Black));
+
+		board.transform(Move::new(Square::from_string("e2"), Square::from_string("e4")));
+		assert!(!board.is_in_check(Side::White));
+		assert!(!board.is_in_check(Side::Black));
 	}
 
 	#[test]
