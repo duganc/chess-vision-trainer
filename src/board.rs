@@ -448,7 +448,8 @@ impl Board {
 				self.get_diagonal_moves(side, square) | self.get_lateral_moves(side, square)
 			}
 			Piece::King => {
-				self.get_adjacent_moves(side, square) | self.get_castles(side, square)
+				let castles = self.get_castles(side, square);
+				self.get_adjacent_moves(side, square) | Bitboard::from_squares(castles.into_iter().map(|c| c.get_king_destination(side)).collect())
 			}
 		};
 
@@ -509,8 +510,60 @@ impl Board {
 
 	}
 
-	fn get_castles(&self, side: Side, square: Square) -> Bitboard {
-		Bitboard::empty() // TODO
+	fn get_castles(&self, side: Side, square: Square) -> Vec<Castle> {
+		let rank = Castle::get_rank(side);
+		let is_king_on_e = (self.get_side_pieces_bitboard(side, Piece::King) & Bitboard::file(File::E)).has_pieces();
+		if !is_king_on_e {
+			return Vec::new();
+		}
+
+		let rooks = self.get_side_pieces_bitboard(side, Piece::Rook);
+		let is_kingside_rook_in_place = (rooks & Bitboard::square(Square::new(File::H, rank))).has_pieces();
+		let is_queenside_rook_in_place = (rooks & Bitboard::square(Square::new(File::A, rank))).has_pieces();
+
+		let kingside_blockers = vec![
+			Square::new(File::F, rank),
+			Square::new(File::G, rank),
+		];
+		let is_kingside_blocked = (Bitboard::from_squares(kingside_blockers) & self.pieces()).has_pieces();
+
+		let queenside_blockers = vec![
+			Square::new(File::B, rank),
+			Square::new(File::C, rank),
+			Square::new(File::D, rank),
+		];
+		let is_queenside_blocked = (Bitboard::from_squares(queenside_blockers) & self.pieces()).has_pieces();
+
+		let opponent = Side::get_opponent(side);
+		let kingside_king_squares = vec![
+			Square::new(File::E, rank),
+			Square::new(File::F, rank),
+			Square::new(File::G, rank),
+		];
+		let is_kingside_attacked = kingside_king_squares.iter().any(|x| self.is_attacking(opponent, *x));
+
+		let queenside_king_squares = vec![
+			Square::new(File::C, rank),
+			Square::new(File::D, rank),
+			Square::new(File::E, rank),
+		];
+		let is_queenside_attacked = queenside_king_squares.iter().any(|x| self.is_attacking(opponent, *x));
+
+		let (castling_rights_kingside, castling_rights_queenside) = match side {
+			Side::White => (self.castling_rights_white_kingside, self.castling_rights_white_queenside),
+			Side::Black => (self.castling_rights_black_kingside, self.castling_rights_black_queenside),
+		};
+
+		let can_castle_kingside = is_kingside_rook_in_place && is_kingside_blocked && is_kingside_attacked && castling_rights_kingside;
+		let can_castle_queenside = is_queenside_rook_in_place && is_queenside_blocked && is_queenside_attacked && castling_rights_queenside;
+
+		match (can_castle_kingside, can_castle_queenside) {
+			(false, false) => Vec::new(),
+			(true, false) => vec![Castle::Kingside],
+			(false, true) => vec![Castle::Queenside],
+			(true, true) => vec![Castle::Kingside, Castle::Queenside]
+		}
+
 	}
 
 	fn get_adjacent_moves(&self, side: Side, square: Square) -> Bitboard {
@@ -625,6 +678,61 @@ impl Board {
 		self.white | self.black
 	}
 
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum Castle {
+	Kingside,
+	Queenside
+}
+
+impl Castle {
+
+	pub fn get_king_move(&self, side: Side) -> Move {
+		let source = Square::new(File::E, Self::get_rank(side));
+		let destination = self.get_king_destination(side);
+		Move::new(source, destination)
+	}
+
+	pub fn get_rook_move(&self, side: Side) -> Move {
+		let source = self.get_rook_source(side);
+		let destination = self.get_rook_destination(side);
+		Move::new(source, destination)
+	}
+
+	pub fn get_rank(side: Side) -> Rank {
+		match side {
+			Side::White => Rank::One,
+			Side::Black => Rank::Eight
+		}
+	}
+
+	fn get_king_destination(&self, side: Side) -> Square {
+		let rank = Self::get_rank(side);
+		let file = match self {
+			Self::Kingside => File::G,
+			Self::Queenside => File::C
+		};
+		Square(file, rank)
+	}
+
+	fn get_rook_source(&self, side: Side) -> Square {
+		let rank = Self::get_rank(side);
+		let file = match self {
+			Self::Kingside => File::H,
+			Self::Queenside => File::A
+		};
+		Square(file, rank)
+	}
+
+	fn get_rook_destination(&self, side: Side) -> Square {
+		let rank = Self::get_rank(side);
+		let file = match self {
+			Self::Kingside => File::F,
+			Self::Queenside => File::D
+		};
+		Square(file, rank)
+	}
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
