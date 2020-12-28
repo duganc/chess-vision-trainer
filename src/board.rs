@@ -209,6 +209,26 @@ impl Board {
 		return false;
 	}
 
+	pub fn make_move(&mut self, m: Move) {
+		assert!(self.is_legal_move(m), "{:?} isn't a legal move.", m);
+		self.force_make_move(m);
+	}
+
+	fn force_make_move(&mut self, m: Move) {
+		let source = m.0;
+		let (side, piece) = self.get(source).unwrap();
+		let kingside_castle = Castle::Kingside.get_king_move(side);
+		let queenside_castle = Castle::Queenside.get_king_move(side);
+		match m {
+			kingside_castle => {
+				let king_move = m;
+				let rook_move = Castle::Kingside.get_rook_move(side);
+				self.transform(king_move);
+				self.transform(rook_move);
+			}
+		}
+	}
+
 	pub fn get_transformation(&self, m: Move) -> Self {
 		let mut to_return = self.clone();
 		to_return.transform(m);
@@ -256,16 +276,28 @@ impl Board {
 		self.set_pieces_bitboard(to_overwrite, to_overwrite_bb & (priviledged_bb.get_inverse()));
 	}
 
+	pub fn force_parse_move(&self, side: Side, r#move: &str) -> Move {
+		self.try_parse_move(side, r#move).unwrap()
+	}
+
 	pub fn try_parse_move(&self, side: Side, r#move: &str) -> Result<Move, String> {
 		
 		match r#move {
 			"O-O-O" => {
-				// TODO: Castling rights
-				return Err(format!("Castling isn't yet supported.  Move: {:?}", r#move));
+				let castles = self.get_castles(side);
+				if castles.contains(&Castle::Queenside) {
+					return Ok(Castle::Queenside.get_king_move(side));
+				} else {
+					return Err("Queenside castling is invalid in this position!".to_string());
+				}
 			},
 			"O-O" => {
-				// TODO: Castling rights
-				return Err(format!("Castling isn't yet supported.  Move: {:?}", r#move));
+				let castles = self.get_castles(side);
+				if castles.contains(&Castle::Kingside) {
+					return Ok(Castle::Kingside.get_king_move(side));
+				} else {
+					return Err("Queenside castling is invalid in this position!".to_string());
+				}
 			},
 			m => {
 				if FORWARD_PAWN_MOVE.is_match(m) {
@@ -448,7 +480,7 @@ impl Board {
 				self.get_diagonal_moves(side, square) | self.get_lateral_moves(side, square)
 			}
 			Piece::King => {
-				let castles = self.get_castles(side, square);
+				let castles = self.get_castles(side);
 				self.get_adjacent_moves(side, square) | Bitboard::from_squares(castles.into_iter().map(|c| c.get_king_destination(side)).collect())
 			}
 		};
@@ -495,22 +527,33 @@ impl Board {
 		let direction = Direction::get_forward(side);
 		let mut to_return = match square.get_adjacent(direction) {
 			None => Bitboard::empty(),
-			Some(s) => Bitboard::square(s)
+			Some(s) => {
+				match self.is_occupied(s) {
+					true => Bitboard::empty(),
+					false => Bitboard::square(s)
+				}
+			}
 		};
 		let is_first_pawn_move = square.1 == Rank::first_pawn_move(side);
 		if is_first_pawn_move && (to_return.has_pieces()) {
-			let double_step = match square.get_adjacent(direction).map(|x| x.get_adjacent(direction)).flatten() {
-				None => Bitboard::empty(),
-				Some(s) => Bitboard::square(s)
+			match square.get_adjacent(direction).map(|x| x.get_adjacent(direction)).flatten() {
+				None => { panic!("Pawn moving two steps would run off the board!  {:?}", square); }
+				Some(s) => {
+					match self.is_occupied(s) {
+						true => {},
+						false => {
+							to_return = to_return | Bitboard::square(s);
+						}
+					}
+				}
 			};
-			to_return = to_return | double_step;
 		}
 
 		return to_return;
 
 	}
 
-	fn get_castles(&self, side: Side, square: Square) -> Vec<Castle> {
+	fn get_castles(&self, side: Side) -> Vec<Castle> {
 		let rank = Castle::get_rank(side);
 		let is_king_on_e = (self.get_side_pieces_bitboard(side, Piece::King) & Bitboard::file(File::E)).has_pieces();
 		if !is_king_on_e {
@@ -1317,6 +1360,70 @@ mod tests {
 		assert_eq!(moves[0], Move(Square::from_string("f5"), Square::from_string("e4")), "{:?}", moves);
 		assert_eq!(moves[1], Move(Square::from_string("f5"), Square::from_string("f4")), "{:?}", moves);
 		assert_eq!(moves[2], Move(Square::from_string("f5"), Square::from_string("g4")), "{:?}", moves);
+	}
+
+	#[test]
+	fn board_computes_castles() {
+		let mut board = Board::starting_position();
+
+		let white_king_square = Square::from_string("e1");
+		let white_king_moves = board.get_legal_moves(white_king_square);
+		let black_king_square = Square::from_string("e8");
+		let black_king_moves = board.get_legal_moves(black_king_square);
+
+		assert!(&board.try_parse_move(Side::White, "O-O").is_err());
+		assert!(&board.try_parse_move(Side::Black, "O-O").is_err());
+		assert!(&board.try_parse_move(Side::White, "O-O-O").is_err());
+		assert!(&board.try_parse_move(Side::Black, "O-O-O").is_err());
+
+		assert!(!white_king_moves.contains(&Castle::Kingside.get_king_move(Side::White)));
+		assert!(!black_king_moves.contains(&Castle::Kingside.get_king_move(Side::Black)));
+		assert!(!white_king_moves.contains(&Castle::Queenside.get_king_move(Side::White)));
+		assert!(!black_king_moves.contains(&Castle::Queenside.get_king_move(Side::Black)));
+
+		board.make_move(board.force_parse_move(Side::White, "e4"));
+		board.make_move(board.force_parse_move(Side::Black, "d6"));
+		board.make_move(board.force_parse_move(Side::White, "Nf3"));
+		board.make_move(board.force_parse_move(Side::Black, "Nf6"));
+
+		let white_king_moves = board.get_legal_moves(white_king_square);
+		let black_king_moves = board.get_legal_moves(black_king_square);
+
+		assert!(&board.try_parse_move(Side::White, "O-O").is_err());
+		assert!(&board.try_parse_move(Side::Black, "O-O").is_err());
+		assert!(&board.try_parse_move(Side::White, "O-O-O").is_err());
+		assert!(&board.try_parse_move(Side::Black, "O-O-O").is_err());
+
+		assert!(!white_king_moves.contains(&Castle::Kingside.get_king_move(Side::White)));
+		assert!(!black_king_moves.contains(&Castle::Kingside.get_king_move(Side::Black)));
+		assert!(!white_king_moves.contains(&Castle::Queenside.get_king_move(Side::White)));
+		assert!(!black_king_moves.contains(&Castle::Queenside.get_king_move(Side::Black)));
+
+		board.make_move(board.force_parse_move(Side::White, "Bc4"));
+		board.make_move(board.force_parse_move(Side::Black, "g7"));
+
+		let white_king_moves = board.get_legal_moves(white_king_square);
+		let black_king_moves = board.get_legal_moves(black_king_square);
+
+		assert!(white_king_moves.contains(&board.force_parse_move(Side::White, "O-O")));
+		assert!(black_king_moves.contains(&board.force_parse_move(Side::Black, "O-O")));
+
+		assert!(&board.try_parse_move(Side::White, "O-O-O").is_err());
+		assert!(&board.try_parse_move(Side::Black, "O-O-O").is_err());
+		assert!(!white_king_moves.contains(&Castle::Queenside.get_king_move(Side::White)));
+		assert!(!black_king_moves.contains(&Castle::Queenside.get_king_move(Side::Black)));
+		
+		board.make_move(board.force_parse_move(Side::White, "O-O"));
+
+		assert!((board.get_side_pieces_bitboard(Side::White, Piece::King) & Bitboard::square(Square::from_string("g1"))).has_pieces());
+		assert!((board.get_side_pieces_bitboard(Side::White, Piece::Rook) & Bitboard::square(Square::from_string("f1"))).has_pieces());
+		
+		board.make_move(board.force_parse_move(Side::Black, "O-O"));
+
+		assert!((board.get_side_pieces_bitboard(Side::Black, Piece::King) & Bitboard::square(Square::from_string("g8"))).has_pieces());
+		assert!((board.get_side_pieces_bitboard(Side::Black, Piece::Rook) & Bitboard::square(Square::from_string("f8"))).has_pieces());
+
+
 	}
 
 	#[test]
