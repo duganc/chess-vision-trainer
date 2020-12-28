@@ -293,7 +293,7 @@ impl Board {
 				if castles.contains(&Castle::Queenside) {
 					return Ok(Castle::Queenside.get_king_move(side));
 				} else {
-					return Err("Queenside castling is invalid in this position!".to_string());
+					return Err(format!("Queenside castling is invalid in this position!  \nPieces: \n{:?}\nKings: \n{:?}\nRooks: \n{:?}", self.pieces().print(), self.kings.print(), self.rooks.print()));
 				}
 			},
 			"O-O" => {
@@ -301,7 +301,7 @@ impl Board {
 				if castles.contains(&Castle::Kingside) {
 					return Ok(Castle::Kingside.get_king_move(side));
 				} else {
-					return Err("Queenside castling is invalid in this position!".to_string());
+					return Err(format!("Kingside castling is invalid in this position!  \nPieces: \n{:?}\nKings: \n{:?}\nRooks: \n{:?}", self.pieces().print(), self.kings.print(), self.rooks.print()));
 				}
 			},
 			m => {
@@ -371,16 +371,28 @@ impl Board {
 
 	fn get_unambiguous_piece_source(&self, side: Side, piece: Piece, destination: Square) -> Result<Square, String> {
 		let pieces = self.get_side_pieces_bitboard(side, piece);
-		let potential_sources = match piece {
+		let vision = match piece {
 			Piece::Pawn => panic!("get_unambiguous_piece_source can't be used on Pawns.  Use get_pawn_move_from_square_in_front instead."),
-			Piece::Knight => (self.get_knight_vision(destination) & pieces).to_squares(),
-			Piece::Bishop => (self.get_diagonal_vision(destination) & pieces).to_squares(),
-			Piece::Rook => (self.get_lateral_vision(destination) & pieces).to_squares(),
-			Piece::Queen => ((self.get_diagonal_vision(destination) | self.get_lateral_vision(destination)) & pieces).to_squares(),
-			Piece::King => (self.get_adjacent_vision(destination) & pieces).to_squares(),
+			Piece::Knight => self.get_knight_vision(destination),
+			Piece::Bishop => self.get_diagonal_vision(destination),
+			Piece::Rook => self.get_lateral_vision(destination),
+			Piece::Queen => (self.get_diagonal_vision(destination) | self.get_lateral_vision(destination)),
+			Piece::King => self.get_adjacent_vision(destination),
 		};
+		let potential_sources = (vision & pieces).to_squares();
 		if potential_sources.len() == 0 {
-			return Err(format!("No {:?} {:?} can reach the destination {:?}.  Board:\n{:?}", side, piece, destination, self.pieces().print()));
+			return Err(
+				format!(
+					"No {:?} {:?} can reach the destination {:?}.  Vision: {:?}.  All pieces:\n{:?}\nSide: {:?}\nOnly side and piece: {:?}\n",
+					side,
+					piece,
+					destination,
+					vision.print(),
+					self.pieces().print(),
+					self.get_side_bitboard(side).print(),
+					pieces.print()
+				)
+			);
 		} else if potential_sources.len() > 2 {
 			return Err(format!("Ambiguous potential sources for {:?} {:?}: {:?}.  Board:\n{:?}", side, piece, potential_sources, self.pieces().print()));
 		} else {
@@ -470,8 +482,7 @@ impl Board {
 
 		let to_return = match piece {
 			Piece::Pawn => {
-				let forward_pawn_moves = self.get_forward_pawn_moves(side, square);
-				self.get_en_passant_takes(side, square) | self.get_diagonal_pawn_takes(side, square) | forward_pawn_moves
+				self.get_en_passant_takes(side, square) | self.get_diagonal_pawn_takes(side, square) | self.get_forward_pawn_moves(side, square)
 			},
 			Piece::Knight => {
 				self.get_knight_moves(side, square)
@@ -603,8 +614,8 @@ impl Board {
 			Side::Black => (self.castling_rights_black_kingside, self.castling_rights_black_queenside),
 		};
 
-		let can_castle_kingside = is_kingside_rook_in_place && is_kingside_blocked && is_kingside_attacked && castling_rights_kingside;
-		let can_castle_queenside = is_queenside_rook_in_place && is_queenside_blocked && is_queenside_attacked && castling_rights_queenside;
+		let can_castle_kingside = is_kingside_rook_in_place && !is_kingside_blocked && !is_kingside_attacked && castling_rights_kingside;
+		let can_castle_queenside = is_queenside_rook_in_place && !is_queenside_blocked && !is_queenside_attacked && castling_rights_queenside;
 
 		match (can_castle_kingside, can_castle_queenside) {
 			(false, false) => Vec::new(),
@@ -691,7 +702,7 @@ impl Board {
 				Direction::UpLeft => (file.unwrap().previous(), rank.unwrap().next()),
 				Direction::UpRight => (file.unwrap().next(), rank.unwrap().next()),
 				Direction::DownLeft => (file.unwrap().previous(), rank.unwrap().previous()),
-				Direction::DownRight => (file.unwrap().previous(), rank.unwrap().next()),
+				Direction::DownRight => (file.unwrap().next(), rank.unwrap().previous()),
 			};
 			file = f;
 			rank = r;
@@ -1420,24 +1431,28 @@ mod tests {
 		assert!(!black_king_moves.contains(&Castle::Queenside.get_king_move(Side::Black)));
 
 		board.make_move(board.force_parse_move(Side::White, "Bc4"));
-		board.make_move(board.force_parse_move(Side::Black, "g7"));
+		board.make_move(board.force_parse_move(Side::Black, "g6"));
 
 		let white_king_moves = board.get_legal_moves(white_king_square);
 		let black_king_moves = board.get_legal_moves(black_king_square);
 
+		assert_eq!(board.get_castles(Side::White), vec![Castle::Kingside]);
+
 		assert!(white_king_moves.contains(&board.force_parse_move(Side::White, "O-O")));
-		assert!(black_king_moves.contains(&board.force_parse_move(Side::Black, "O-O")));
+		assert!(&board.try_parse_move(Side::Black, "O-O").is_err());
+
+		board.make_move(board.force_parse_move(Side::White, "O-O"));
+		board.make_move(board.force_parse_move(Side::Black, "Bg7"));
+
+		assert!((board.get_side_pieces_bitboard(Side::White, Piece::King) & Bitboard::square(Square::from_string("g1"))).has_pieces());
+		assert!((board.get_side_pieces_bitboard(Side::White, Piece::Rook) & Bitboard::square(Square::from_string("f1"))).has_pieces());
 
 		assert!(&board.try_parse_move(Side::White, "O-O-O").is_err());
 		assert!(&board.try_parse_move(Side::Black, "O-O-O").is_err());
 		assert!(!white_king_moves.contains(&Castle::Queenside.get_king_move(Side::White)));
 		assert!(!black_king_moves.contains(&Castle::Queenside.get_king_move(Side::Black)));
 		
-		board.make_move(board.force_parse_move(Side::White, "O-O"));
-
-		assert!((board.get_side_pieces_bitboard(Side::White, Piece::King) & Bitboard::square(Square::from_string("g1"))).has_pieces());
-		assert!((board.get_side_pieces_bitboard(Side::White, Piece::Rook) & Bitboard::square(Square::from_string("f1"))).has_pieces());
-		
+		board.make_move(board.force_parse_move(Side::White, "d4"));
 		board.make_move(board.force_parse_move(Side::Black, "O-O"));
 
 		assert!((board.get_side_pieces_bitboard(Side::Black, Piece::King) & Bitboard::square(Square::from_string("g8"))).has_pieces());
@@ -1530,33 +1545,43 @@ mod tests {
 		board.add(Side::White, Piece::Pawn, Square::from_string("f6"));
 
 		let vision = board.get_adjacent_vision(Square::from_string("b3"));
-		assert_eq!(vision.to_squares().len(), 8);
+		assert_eq!(vision.to_squares().len(), 8, "{:?}", vision.print());
 
 		let vision = board.get_adjacent_vision(Square::from_string("h8"));
-		assert_eq!(vision.to_squares().len(), 3);
+		assert_eq!(vision.to_squares().len(), 3, "{:?}", vision.print());
 
 		let vision = board.get_adjacent_vision(Square::from_string("f7"));
-		assert_eq!(vision.to_squares().len(), 8);
+		assert_eq!(vision.to_squares().len(), 8, "{:?}", vision.print());
 
 
 		let vision = board.get_immediately_diagonal_vision(Square::from_string("b3"));
-		assert_eq!(vision.to_squares().len(), 4);
+		assert_eq!(vision.to_squares().len(), 4, "{:?}", vision.print());
 
 		let vision = board.get_immediately_diagonal_vision(Square::from_string("h8"));
-		assert_eq!(vision.to_squares().len(), 1);
+		assert_eq!(vision.to_squares().len(), 1, "{:?}", vision.print());
 
 		let vision = board.get_immediately_diagonal_vision(Square::from_string("f7"));
-		assert_eq!(vision.to_squares().len(), 4);
+		assert_eq!(vision.to_squares().len(), 4, "{:?}", vision.print());
 
 
 		let vision = board.get_lateral_vision(Square::from_string("b3"));
-		assert_eq!(vision.to_squares().len(), 14);
+		assert_eq!(vision.to_squares().len(), 14, "{:?}", vision.print());
 
 		let vision = board.get_lateral_vision(Square::from_string("h8"));
-		assert_eq!(vision.to_squares().len(), 14);
+		assert_eq!(vision.to_squares().len(), 14, "{:?}", vision.print());
 
 		let vision = board.get_lateral_vision(Square::from_string("f7"));
-		assert_eq!(vision.to_squares().len(), 8);
+		assert_eq!(vision.to_squares().len(), 8, "{:?}", vision.print());
+
+
+		let vision = board.get_diagonal_vision(Square::from_string("b3"));
+		assert_eq!(vision.to_squares().len(), 8, "{:?}", vision.print());
+
+		let vision = board.get_diagonal_vision(Square::from_string("h8"));
+		assert_eq!(vision.to_squares().len(), 1, "{:?}", vision.print());
+
+		let vision = board.get_diagonal_vision(Square::from_string("f7"));
+		assert_eq!(vision.to_squares().len(), 8, "{:?}", vision.print());
 		
 	}
 
