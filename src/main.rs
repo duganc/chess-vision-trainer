@@ -7,6 +7,10 @@ mod game;
 mod board;
 
 use clap::{App, SubCommand, Arg};
+use crate::game::{Game};
+use crate::board::{Board, Side, Move};
+
+const DEFAULT_N_ROUNDS: usize = 10;
 
 
 fn main() {
@@ -28,8 +32,11 @@ fn main() {
 				)
 		).get_matches();
 
-	if let Some(_matches) = matches.subcommand_matches("check") {
-		println!("Check!");
+	if let Some(_matches) = matches.subcommand_matches("checks") {
+		let mut game = Game::new();
+		game.make_random_moves_and_end_on_random_side(DEFAULT_N_ROUNDS);
+		let side = game.get_next_to_act();
+		println!("{:?}", game.pretty_print_moves());
 	} else if let Some(matches) = matches.subcommand_matches("captures") {
 		if matches.is_present("arg") {
 			panic!("Arg not defined.");

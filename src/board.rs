@@ -300,6 +300,42 @@ impl Board {
 		self.set_pieces_bitboard(to_overwrite, to_overwrite_bb & (priviledged_bb.get_inverse()));
 	}
 
+	pub fn get_move_string(&self, m: Move) -> String {
+		let source = m.0;
+		let destination = m.1;
+		let (side, piece) = match self.get(source) {
+			Some(t) => t,
+			None => panic!("No valid piece at the source of {:?}.  Pieces: {:?}", m, self.pieces().print())
+		};
+		if piece == Piece::Pawn {
+			if source.0 == destination.0 {
+				return destination.to_string();
+			} else {
+				return format!("{:?}{:?}", source.0.to_string(), destination.to_string());
+			}
+		} else {
+			let potential_sources = self.get_potential_sources(side, piece, destination).to_squares();
+			if potential_sources.len() == 1 {
+				return format!("{:?}{:?}", piece.to_string(), destination.to_string());
+			} else if potential_sources.len() > 1 {
+				let first_source = potential_sources[0];
+				let file = first_source.0;
+				let rank = first_source.1;
+
+				if potential_sources.iter().filter(|x| x.0 == file).count() == 1 {
+					return format!("{:?}{:?}{:?}", piece.to_string(), file.to_string(), destination.to_string());
+				} else if potential_sources.iter().filter(|x| x.1 == rank).count() == 1 {
+					return format!("{:?}{:?}{:?}", piece.to_string(), rank.to_string(), destination.to_string());
+				} else {
+					panic!("This level of disambiguation is unsupported!");
+				}
+				
+			} else {
+				panic!("No sources for move: {:?}", m);
+			}
+		}
+	}
+
 	pub fn force_parse_move(&self, side: Side, r#move: &str) -> Move {
 		self.try_parse_move(side, r#move).unwrap()
 	}
@@ -535,6 +571,16 @@ impl Board {
 
 	pub fn is_legal_move(&self, m: Move) -> bool {
 		self.get_legal_moves(m.0).contains(&m)
+	}
+
+	pub fn get_legal_moves_for_side(&self, side: Side) -> Vec<Move> {
+		self.get_side_bitboard(side).to_squares().iter().fold(
+			Vec::new(),
+			|mut accumulator, x| {
+				accumulator.append(&mut self.get_legal_moves(*x));
+				accumulator
+			}
+		)
 	}
 
 
@@ -873,6 +919,10 @@ impl Side {
 			Side::Black => Side::White
 		}
 	}
+
+	pub fn all() -> Vec<Self> {
+		vec![Side::White, Side::Black]
+	}
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -902,6 +952,17 @@ impl Piece {
 			'Q' => Piece::Queen,
 			'K' => Piece::King,
 			_ => panic!("Invalid character: {:?}", c)
+		}
+	}
+
+	pub fn to_string(&self) -> String {
+		match self {
+			Piece::Pawn => "P".to_string(),
+			Piece::Knight => "N".to_string(),
+			Piece::Bishop => "B".to_string(),
+			Piece::Rook => "R".to_string(),
+			Piece::Queen => "Q".to_string(),
+			Piece::King => "K".to_string(),
 		}
 	}
 
@@ -949,6 +1010,10 @@ impl Square {
 		let rank = Rank::from_char(rank_char);
 
 		Square(file, rank)
+	}
+
+	pub fn to_string(&self) -> String {
+		format!("{:?}{:?}", self.0.to_string(), self.1.to_string())
 	}
 
 	pub fn get_adjacent(&self, direction: Direction) -> Option<Self> {
@@ -1077,6 +1142,19 @@ impl File {
 		Self::from_char(s.chars().nth(0).unwrap())
 	}
 
+	pub fn to_string(&self) -> String {
+		match self {
+			File::A => "a".to_string(),
+			File::B => "b".to_string(),
+			File::C => "c".to_string(),
+			File::D => "d".to_string(),
+			File::E => "e".to_string(),
+			File::F => "f".to_string(),
+			File::G => "g".to_string(),
+			File::H => "h".to_string(),
+		}
+	}
+
 	pub fn from_char(s: char) -> Self {
 		s.to_ascii_lowercase();
 		match s {
@@ -1160,6 +1238,19 @@ impl Rank {
 			panic!("Invalid string length: {:?}", s);
 		}
 		Self::from_char(s.chars().nth(0).unwrap())
+	}
+
+	pub fn to_string(&self) -> String {
+		match self {
+			Rank::One => "1".to_string(),
+			Rank::Two => "2".to_string(),
+			Rank::Three => "3".to_string(),
+			Rank::Four => "4".to_string(),
+			Rank::Five => "5".to_string(),
+			Rank::Six => "6".to_string(),
+			Rank::Seven => "7".to_string(),
+			Rank::Eight => "8".to_string(),
+		}
 	}
 
 	pub fn from_char(s: char) -> Self {

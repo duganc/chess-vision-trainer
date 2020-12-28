@@ -1,11 +1,15 @@
-
+use rand::{seq::IteratorRandom, thread_rng};
+use rand::rngs::ThreadRng;
+use rand::prelude::*;
 use crate::board::{Board, Move, Square, Side, Rank, File};
+
 
 #[derive(Debug)]
 pub struct Game {
 	board: Board,
 	next_to_act: Side,
-	moves: Vec<Move>
+	moves: Vec<Move>,
+	rng: ThreadRng
 }
 
 impl Game {
@@ -17,8 +21,36 @@ impl Game {
 		Self {
 			board,
 			next_to_act,
-			moves
+			moves,
+			rng: thread_rng()
 		}
+	}
+
+	pub fn get_next_to_act(&self) -> Side {
+		self.next_to_act
+	}
+
+	pub fn pretty_print_moves(&self) -> String {
+		let mut to_return = "".to_string();
+		let mut side = Side::White;
+		for m in &self.moves {
+			let move_string = format!("{: >5}", self.board.get_move_string(*m));
+			let delimiter = match side {
+				Side::White => "|".to_string(),
+				Side::Black => "\n".to_string()
+			};
+			to_return += &(move_string + &delimiter);
+			side = Side::get_opponent(side);
+		}
+		return to_return.to_string();
+	}
+
+	pub fn is_game_over(&self) -> bool {
+		Side::all().into_iter().any(|s| self.is_stalemate_by(s) || self.is_won_by(s))
+	}
+
+	pub fn is_stalemate_by(&self, side: Side) -> bool {
+		self.board.is_stalemated(Side::get_opponent(side))
 	}
 
 	pub fn is_won_by(&self, side: Side) -> bool {
@@ -27,6 +59,7 @@ impl Game {
 
 	pub fn make_move(&mut self, m: Move) {
 		self.board.make_move(m);
+		self.moves.push(m);
 		self.next_to_act = Side::get_opponent(self.next_to_act);
 	}
 
@@ -51,6 +84,31 @@ impl Game {
 			self.board.make_move(m);
 			side = Side::get_opponent(side);
 		}
+	}
+
+	pub fn make_random_move(&mut self) {
+		let moves = self.board.get_legal_moves_for_side(self.next_to_act);
+		let result = moves.iter().choose(&mut self.rng);
+		match result {
+			Some(m) => self.make_move(*m),
+			None => panic!("No legal moves remaining!")
+		};
+		println!("{:?} made move: {:?}", Side::get_opponent(self.next_to_act), result);
+	}
+
+	pub fn make_random_moves(&mut self, n: usize) {
+		for _i in 0..n {
+			self.make_random_move();
+		}
+	}
+
+	pub fn make_random_moves_and_end_on_random_side(&mut self, rounds: usize) {
+		let mut n = 2*rounds;
+		let adjust: bool = self.rng.gen();
+		if adjust {
+			n = n - 1;
+		}
+		self.make_random_moves(n);
 	}
 
 }
