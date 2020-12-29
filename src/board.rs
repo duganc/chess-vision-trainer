@@ -11,6 +11,10 @@ lazy_static! {
 	// TODO: Handle disambiguation of multiple queens e.g. Qa1b2
 }
 
+static WHITE_COLOR_CODE: &str = "\x1b[37m";
+static RED_COLOR_CODE: &str = "\x1b[31m";
+static RESET_COLOR_CODE: &str = "\x1b[0m";
+
 #[derive(Debug, Clone)]
 pub struct Board {
 	white: Bitboard,
@@ -108,6 +112,31 @@ impl Board {
 			castling_rights_black_kingside: true,
 			castling_rights_black_queenside: true,
 		}
+	}
+
+	pub fn pretty_print(&self) -> String {
+		
+		let horizontal_border = "+---+---+---+---+---+---+---+---+\n".to_string();
+		let mut to_return = horizontal_border.clone();
+		for rank in Rank::all().into_iter().rev() {
+			let mut squares = Vec::new();
+			for file in File::all() {
+				match self.get(Square(file, rank)) {
+					None => squares.push(" ".to_string()),
+					Some((side, piece)) => {
+						let color_code = match side {
+							Side::White => WHITE_COLOR_CODE,
+							Side::Black => RED_COLOR_CODE
+						};
+						squares.push(format!("{}{}{}", color_code.to_string(), piece.to_string(), RESET_COLOR_CODE));
+					}
+				}
+			}
+			to_return += &format!("| {} | {} | {} | {} | {} | {} | {} | {} |\n", squares[0].to_string(), squares[1].to_string(), squares[2].to_string(), squares[3].to_string(), squares[4].to_string(), squares[5].to_string(), squares[6].to_string(), squares[7]).to_string();
+			to_return += &horizontal_border;
+		}
+		return to_return.to_string();
+
 	}
 
 	pub fn add(&mut self, side: Side, piece: Piece, square: Square) {
@@ -305,33 +334,33 @@ impl Board {
 		let destination = m.1;
 		let (side, piece) = match self.get(source) {
 			Some(t) => t,
-			None => panic!("No valid piece at the source of {:?}.  Pieces: {:?}", m, self.pieces().print())
+			None => panic!("No valid piece at the source of {:?}.  Board: {:?}", m, self.pretty_print())
 		};
 		if piece == Piece::Pawn {
 			if source.0 == destination.0 {
 				return destination.to_string();
 			} else {
-				return format!("{:?}{:?}", source.0.to_string(), destination.to_string());
+				return format!("{}{}", source.0.to_string(), destination.to_string());
 			}
 		} else {
 			let potential_sources = self.get_potential_sources(side, piece, destination).to_squares();
 			if potential_sources.len() == 1 {
-				return format!("{:?}{:?}", piece.to_string(), destination.to_string());
+				return format!("{}{}", piece.to_string(), destination.to_string());
 			} else if potential_sources.len() > 1 {
 				let first_source = potential_sources[0];
 				let file = first_source.0;
 				let rank = first_source.1;
 
 				if potential_sources.iter().filter(|x| x.0 == file).count() == 1 {
-					return format!("{:?}{:?}{:?}", piece.to_string(), file.to_string(), destination.to_string());
+					return format!("{}{}{}", piece.to_string(), file.to_string(), destination.to_string());
 				} else if potential_sources.iter().filter(|x| x.1 == rank).count() == 1 {
-					return format!("{:?}{:?}{:?}", piece.to_string(), rank.to_string(), destination.to_string());
+					return format!("{}{}{}", piece.to_string(), rank.to_string(), destination.to_string());
 				} else {
 					panic!("This level of disambiguation is unsupported!");
 				}
 				
 			} else {
-				panic!("No sources for move: {:?}", m);
+				panic!("No sources for move: {:?}.  Board: {:?}", m, self.pretty_print());
 			}
 		}
 	}
@@ -614,6 +643,12 @@ impl Board {
 
 		let to_return = self.get_moves_not_into_check(square, to_return);
 		return to_return;
+	}
+
+	pub fn get_checks(&self, side: Side) -> Vec<Move> {
+		let legal_moves = self.get_legal_moves_for_side(side);
+		let opponent = Side::get_opponent(side);
+		return legal_moves.into_iter().filter(|m| self.get_transformation(*m).is_in_check(opponent)).collect();
 	}
 
 	fn get_moves_not_into_check(&self, source: Square, bitboard: Bitboard) -> Vec<Move> {
@@ -978,7 +1013,7 @@ impl Piece {
 	}
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Move(Square, Square);
 
 impl Move {
@@ -987,9 +1022,21 @@ impl Move {
 		Move(from, to)
 	}
 
+	pub fn parse_move_strings(s: String) -> Vec<String> {
+		let s = str::replace(&s, "\n", "");
+		let s = str::replace(&s, "\t", "");
+		let s = str::replace(&s, " ", "");
+		let s = str::replace(&s, "x", "");
+		let s = str::replace(&s, "+", "");
+		let s = str::replace(&s, "#", "");
+
+		let v = s.split(",").map(|x| x.to_string()).collect();
+		return v;
+	}
+
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Square(File, Rank);
 
 impl Square {
@@ -1013,7 +1060,7 @@ impl Square {
 	}
 
 	pub fn to_string(&self) -> String {
-		format!("{:?}{:?}", self.0.to_string(), self.1.to_string())
+		format!("{}{}", self.0.to_string(), self.1.to_string())
 	}
 
 	pub fn get_adjacent(&self, direction: Direction) -> Option<Self> {
@@ -1114,7 +1161,7 @@ impl Direction {
 	}
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum File {
 	A = 0,
 	B = 1,
@@ -1212,7 +1259,7 @@ impl File {
 	}
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum Rank {
 	One = 0,
 	Two = 1,
@@ -1546,7 +1593,13 @@ mod tests {
 				Move(Square::from_string("a2"), Square::from_string("a3")),
 				Move(Square::from_string("a2"), Square::from_string("a4")),
 			]
-		)
+		);
+
+		let mut board = Board::starting_position();
+
+		let m = board.force_parse_move(Side::White, "b4");
+		board.make_move(m);
+		assert!(!board.get_legal_moves_for_side(Side::White).contains(&m));
 	}
 
 	#[test]
@@ -1613,6 +1666,25 @@ mod tests {
 
 		assert!((board.get_side_pieces_bitboard(Side::Black, Piece::King) & Bitboard::square(Square::from_string("g8"))).has_pieces());
 		assert!((board.get_side_pieces_bitboard(Side::Black, Piece::Rook) & Bitboard::square(Square::from_string("f8"))).has_pieces());
+
+	}
+
+	#[test]
+	fn board_makes_moves() {
+		let mut board = Board::starting_position();
+
+		board.make_move(board.force_parse_move(Side::White, "h4"));
+		assert_eq!(board.get(Square::from_string("h4")), Some((Side::White, Piece::Pawn)));
+		assert_eq!(board.get(Square::from_string("h2")), None);
+		assert_eq!(board.get(Square::from_string("h3")), None);
+
+		board.make_move(board.force_parse_move(Side::White, "h5"));
+		assert_eq!(board.get(Square::from_string("h5")), Some((Side::White, Piece::Pawn)));
+		assert_eq!(board.get(Square::from_string("h4")), None);
+
+		board.make_move(board.force_parse_move(Side::White, "Nh3"));
+		assert_eq!(board.get(Square::from_string("h3")), Some((Side::White, Piece::Knight)));
+		assert_eq!(board.get(Square::from_string("g1")), None);
 
 	}
 

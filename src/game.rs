@@ -33,16 +33,22 @@ impl Game {
 	pub fn pretty_print_moves(&self) -> String {
 		let mut to_return = "".to_string();
 		let mut side = Side::White;
+		let mut replay_board = Board::starting_position();
 		for m in &self.moves {
-			let move_string = format!("{: >5}", self.board.get_move_string(*m));
+			let move_string = format!("{: >5}", replay_board.get_move_string(*m));
 			let delimiter = match side {
 				Side::White => "|".to_string(),
 				Side::Black => "\n".to_string()
 			};
 			to_return += &(move_string + &delimiter);
+			replay_board.make_move(*m);
 			side = Side::get_opponent(side);
 		}
 		return to_return.to_string();
+	}
+
+	pub fn pretty_print_board(&self) -> String {
+		self.board.pretty_print()
 	}
 
 	pub fn is_game_over(&self) -> bool {
@@ -70,19 +76,31 @@ impl Game {
 	}
 
 	pub fn make_moves_from_string(&mut self, s: String) {
-		let s = str::replace(&s, "\n", "");
-		let s = str::replace(&s, "\t", "");
-		let s = str::replace(&s, " ", "");
-		let s = str::replace(&s, "x", "");
-		let s = str::replace(&s, "+", "");
-		let s = str::replace(&s, "#", "");
-
-		let move_strings = s.split(",");
+		let move_strings = Move::parse_move_strings(s);
 		let mut side = self.next_to_act;
 		for move_string in move_strings {
-			let m = self.board.force_parse_move(side, move_string);
+			let m = self.board.force_parse_move(side, &move_string);
 			self.board.make_move(m);
 			side = Side::get_opponent(side);
+		}
+	}
+
+	pub fn get_checks(&self) -> Vec<Move> {
+		self.board.get_checks(self.next_to_act)
+	}
+
+	pub fn parse_moves_from_current_position(&self, s: String) -> Result<Vec<Move>, String> {
+		let move_results: Vec<Result<Move, String>> = Move::parse_move_strings(s).into_iter().map(|m| self.board.try_parse_move(self.next_to_act, &m)).collect();
+		let n_errors = move_results.iter().filter(|m| m.is_err()).count();
+		if n_errors > 0 {
+			let first_error: Option<Result<Move, String>> = move_results.into_iter().filter(|m| m.is_err()).nth(0);
+			return match first_error {
+				None => panic!("Unreachable as we've shown that there's at least one error above."),
+				Some(Err(result)) => Err(result),
+				Some(Ok(_)) => panic!("Unreachable as we've shown that there's at least one error above."),
+			};
+		} else {
+			return Ok(move_results.into_iter().map(|m| m.unwrap()).collect());
 		}
 	}
 
@@ -93,7 +111,6 @@ impl Game {
 			Some(m) => self.make_move(*m),
 			None => panic!("No legal moves remaining!")
 		};
-		println!("{:?} made move: {:?}", Side::get_opponent(self.next_to_act), result);
 	}
 
 	pub fn make_random_moves(&mut self, n: usize) {
