@@ -42,8 +42,8 @@ impl Trainer {
 					match self.validate(input) {
 						Ok(_result) => {
 							match self.evaluate() {
-								Ok(evaluation) => {
-									self.emit(evaluation);
+								Ok(_evaluation) => {
+									self.emit("Correct!".to_string());
 								},
 								Err(evaluation) => {
 									self.emit(evaluation);
@@ -56,7 +56,7 @@ impl Trainer {
 							}
 						},
 						Err(e) => {
-							self.emit(e);
+							self.emit(format!("Input error: {}", e));
 						}
 					}
 				},
@@ -267,9 +267,9 @@ impl TrainerRequest {
 	}
 
 	fn validate(&mut self, game: &Game, input: String) -> Result<String, String> {
-		match self.validator.validate(game, input) {
+		match self.validator.validate(game, input.clone()) {
 			Ok(response) => {
-				self.response = Some(response.clone());
+				self.response = Some(input.clone());
 				return Ok(response);
 			},
 			Err(e) => {
@@ -430,6 +430,10 @@ mod tests {
 		
 		assert_eq!(trainer.get_state(), TrainerState::Finished);
 		let output = trainer.get_output();
-		assert_eq!(output, TrainerOutput::Buffer(vec!["Correct!".to_string()]));
+		match output {
+			TrainerOutput::Buffer(buffer) => assert_eq!(buffer[buffer.len() - 1], "Correct!".to_string()),
+			_ => panic!("Should have been a buffer.")
+		};
+		
 	}
 }
