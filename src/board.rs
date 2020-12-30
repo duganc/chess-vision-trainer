@@ -124,11 +124,7 @@ impl Board {
 				match self.get(Square(file, rank)) {
 					None => squares.push(" ".to_string()),
 					Some((side, piece)) => {
-						let color_code = match side {
-							Side::White => WHITE_COLOR_CODE,
-							Side::Black => RED_COLOR_CODE
-						};
-						squares.push(format!("{}{}{}", color_code.to_string(), piece.to_string(), RESET_COLOR_CODE));
+						squares.push(side.colorize(piece.to_string()));
 					}
 				}
 			}
@@ -651,6 +647,26 @@ impl Board {
 		return legal_moves.into_iter().filter(|m| self.get_transformation(*m).is_in_check(opponent)).collect();
 	}
 
+	pub fn get_captures(&self, side: Side) -> Vec<Move> {
+		let legal_moves = self.get_legal_moves_for_side(side);
+		let opponent = Side::get_opponent(side);
+		return legal_moves.into_iter().filter(|m| self.is_capture(*m)).collect();
+	}
+
+	pub fn is_capture(&self, m: Move) -> bool {
+		let source = m.0;
+		let (side, _piece) = match self.get(m.0) {
+			Some(t) => t,
+			None => panic!("There's nothing to move there: {:?}\nBoard: {}", m, self.pretty_print())
+		};
+		let opponent = Side::get_opponent(side);
+		let destination = m.1;
+		match self.get(destination) {
+			None => false,
+			Some((s, _)) => opponent == s
+		}
+	}
+
 	fn get_moves_not_into_check(&self, source: Square, bitboard: Bitboard) -> Vec<Move> {
 		let destinations = bitboard.to_squares();
 		let (side, piece) = match self.get(source) {
@@ -955,8 +971,23 @@ impl Side {
 		}
 	}
 
+	pub fn to_string(&self) -> String {
+		match self {
+			Side::White => "White".to_string(),
+			Side::Black => "Black".to_string()
+		}
+	}
+
 	pub fn all() -> Vec<Self> {
 		vec![Side::White, Side::Black]
+	}
+
+	pub fn colorize(&self, s: String) -> String {
+		let color_code = match self {
+			Side::White => WHITE_COLOR_CODE,
+			Side::Black => RED_COLOR_CODE
+		};
+		format!("{}{}{}", color_code.to_string(), s, RESET_COLOR_CODE)
 	}
 }
 

@@ -30,6 +30,10 @@ impl Game {
 		self.next_to_act
 	}
 
+	pub fn get_board_clone(&self) -> Board {
+		self.board.clone()
+	}
+
 	pub fn pretty_print_moves(&self) -> String {
 		let mut to_return = "".to_string();
 		let mut side = Side::White;
@@ -89,6 +93,10 @@ impl Game {
 		self.board.get_checks(self.next_to_act)
 	}
 
+	pub fn get_captures(&self) -> Vec<Move> {
+		self.board.get_captures(self.next_to_act)
+	}
+
 	pub fn parse_moves_from_current_position(&self, s: String) -> Result<Vec<Move>, String> {
 		let move_results: Vec<Result<Move, String>> = Move::parse_move_strings(s).into_iter().map(|m| self.board.try_parse_move(self.next_to_act, &m)).collect();
 		let n_errors = move_results.iter().filter(|m| m.is_err()).count();
@@ -102,6 +110,26 @@ impl Game {
 		} else {
 			return Ok(move_results.into_iter().map(|m| m.unwrap()).collect());
 		}
+	}
+
+	pub fn parse_sequential_moves(&self, s: String) -> Result<Vec<Move>, String> {
+		let move_strings = Move::parse_move_strings(s);
+		let mut parsing_board = self.get_board_clone();
+		let mut side = self.next_to_act;
+		let mut to_return = Vec::new();
+		for move_string in move_strings {
+			match parsing_board.try_parse_move(side, &move_string) {
+				Ok(m) => {
+					parsing_board.make_move(m);
+					to_return.push(m);
+				},
+				Err(e) => {return Err(e)}
+			};
+			side = Side::get_opponent(side);
+		}
+
+		return Ok(to_return);
+
 	}
 
 	pub fn make_random_move(&mut self) {
