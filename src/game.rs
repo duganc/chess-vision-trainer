@@ -132,6 +132,10 @@ impl Game {
 
 	}
 
+	pub fn get_moves(&self) -> Vec<Move> {
+		self.moves.clone()
+	}
+
 	pub fn get_move_string_from_current_position(&self, m: Move) -> String {
 		self.board.get_move_string(m)
 	}

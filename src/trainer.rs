@@ -364,10 +364,14 @@ impl TrainerResponseEvaluator {
 	fn prepare_game(&self, game: &mut Game) {
 		match self {
 			Self::AreAllChecksInPosition => {
-				game.make_random_moves_and_end_on_random_side(DEFAULT_N_ROUNDS);
+				if game.get_moves().len() == 0 {
+					game.make_random_moves_and_end_on_random_side(DEFAULT_N_ROUNDS);
+				}
 			},
 			Self::AreAllCapturesInPosition => {
-				game.make_random_moves_and_end_on_random_side(DEFAULT_N_ROUNDS);
+				if game.get_moves().len() == 0 {
+					game.make_random_moves_and_end_on_random_side(DEFAULT_N_ROUNDS);
+				}
 			}
 		}
 
