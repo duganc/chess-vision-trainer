@@ -15,7 +15,7 @@ static WHITE_COLOR_CODE: &str = "\x1b[37m";
 static RED_COLOR_CODE: &str = "\x1b[31m";
 static RESET_COLOR_CODE: &str = "\x1b[0m";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Board {
 	white: Bitboard,
 	black: Bitboard,
@@ -330,7 +330,7 @@ impl Board {
 		let destination = m.1;
 		let (side, piece) = match self.get(source) {
 			Some(t) => t,
-			None => panic!("No valid piece at the source of {:?}.  Board: {:?}", m, self.pretty_print())
+			None => panic!("No valid piece at the source of {:?}.  Board: {}", m, self.pretty_print())
 		};
 		if piece == Piece::Pawn {
 			if source.0 == destination.0 {
@@ -496,7 +496,7 @@ impl Board {
 		if potential_sources.len() == 0 {
 			return Err(
 				format!(
-					"No {:?} {:?} can reach the destination {:?}.  All pieces:\n{:?}\nSide: {:?}\nOnly side and piece: {:?}\n",
+					"No {:?} {:?} can reach the destination {:?}.  All pieces:\n{}\nSide: {}\nOnly side and piece: {}\n",
 					side,
 					piece,
 					destination,
@@ -506,7 +506,7 @@ impl Board {
 				)
 			);
 		} else if potential_sources.len() > 2 {
-			return Err(format!("Ambiguous potential sources for {:?} {:?}: {:?}.  Board:\n{:?}", side, piece, potential_sources, self.pieces().print()));
+			return Err(format!("Ambiguous potential sources for {:?} {:?}: {:?}.  Board:\n{}", side, piece, potential_sources, self.pieces().print()));
 		} else {
 			let source = potential_sources[0];
 			return Ok(source);

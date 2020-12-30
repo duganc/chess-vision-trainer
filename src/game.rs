@@ -84,7 +84,7 @@ impl Game {
 		let mut side = self.next_to_act;
 		for move_string in move_strings {
 			let m = self.board.force_parse_move(side, &move_string);
-			self.board.make_move(m);
+			self.make_move(m);
 			side = Side::get_opponent(side);
 		}
 	}
@@ -130,6 +130,22 @@ impl Game {
 
 		return Ok(to_return);
 
+	}
+
+	pub fn get_move_string_from_current_position(&self, m: Move) -> String {
+		self.board.get_move_string(m)
+	}
+
+	pub fn get_move_strings_from_current_position(&self, moves: Vec<Move>) -> String {
+		let move_strings: Vec<String> = moves.iter().map(|x| self.get_move_string_from_current_position(*x)).collect();
+		let mut to_return = "".to_string();
+		if move_strings.len() == 0 {
+			return to_return;
+		}
+		for move_string in move_strings {
+			to_return += &format!("{}{}", move_string, ", ".to_string());
+		}
+		return to_return[0..(to_return.len()) - 2].to_string();
 	}
 
 	pub fn make_random_move(&mut self) {
@@ -237,5 +253,47 @@ mod tests {
 			".to_string()
 		);
 		assert!(game.is_won_by(Side::White));
+	}
+
+	#[test]
+	fn game_pretty_prints_moves() {
+		let moves = "
+		Nh3,
+		b5,
+		Ng1,
+		Nf6,
+		g3,
+		Ne4,
+		b3,
+		Nd2,
+		h3,
+		g5,
+		h4,
+		c5,
+		Bd2,
+		c4,
+		c3,
+		d5,
+		e3,
+		Ba6,
+		Bh3,
+		h5
+		".to_string();
+		let mut game = Game::new();
+		game.make_moves_from_string(moves);
+		assert!(game.board != Board::starting_position());
+
+		assert_eq!(
+			game.pretty_print_moves(),
+			 "  Nh3|   b5\n".to_string() + 
+			&"  Ng1|  Nf6\n".to_string() +
+			&"   g3|  Ne4\n".to_string() +
+			&"   b3|  Nd2\n".to_string() +
+			&"   h3|   g5\n".to_string() +
+			&"   h4|   c5\n".to_string() +
+			&"  Bd2|   c4\n".to_string() +
+			&"   c3|   d5\n".to_string() +
+			&"   e3|  Ba6\n".to_string() +
+			&"  Bh3|   h5\n".to_string());
 	}
 }

@@ -14,8 +14,6 @@ use crate::trainer::{Trainer, TrainerMode};
 use crate::game::{Game};
 use crate::board::{Board, Side, Move};
 
-const DEFAULT_N_ROUNDS: usize = 10;
-
 
 fn main() {
 
@@ -43,7 +41,8 @@ fn main() {
 		if matches.is_present("arg") {
 			panic!("Arg not defined.");
 		}
-		println!("Captures!");
+		let mut trainer = Trainer::builder(TrainerMode::Captures).build();
+		trainer.run();
 	} else {
 		panic!("Invalid subcommand");
 	}
