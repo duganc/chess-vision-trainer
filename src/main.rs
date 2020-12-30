@@ -24,24 +24,34 @@ fn main() {
 		.subcommand(
 			SubCommand::with_name("checks")
 				.about("Can you find all the checks in a position?")
+				.arg(
+					Arg::with_name("blindfold")
+						.short("b")
+						.long("blindfold")
+				)
 		).subcommand(
 			SubCommand::with_name("captures")
 				.about("Can you find all of the captures in a position?")
 				.arg(
-					Arg::with_name("arg")
-						.short("a")
-						.long("arg")
+					Arg::with_name("blindfold")
+						.short("b")
+						.long("blindfold")
 				)
 		).get_matches();
 
 	if let Some(_matches) = matches.subcommand_matches("checks") {
-		let mut trainer = Trainer::builder(TrainerMode::Checks).build();
+		let mut builder = Trainer::builder(TrainerMode::Checks);
+		if matches.is_present("blindfold") {
+			builder = builder.blindfold();
+		}
+		let mut trainer = builder.build();
 		trainer.run();
 	} else if let Some(matches) = matches.subcommand_matches("captures") {
-		if matches.is_present("arg") {
-			panic!("Arg not defined.");
+		let mut builder = Trainer::builder(TrainerMode::Captures);
+		if matches.is_present("blindfold") {
+			builder = builder.blindfold();
 		}
-		let mut trainer = Trainer::builder(TrainerMode::Captures).build();
+		let mut trainer = builder.build();
 		trainer.run();
 	} else {
 		panic!("Invalid subcommand");

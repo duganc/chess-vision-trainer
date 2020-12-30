@@ -13,6 +13,7 @@ pub struct Trainer {
 	state: TrainerState,
 	input_source: TrainerInputSource,
 	output: TrainerOutput,
+	blindfold: bool,
 	game: Game
 }
 
@@ -23,6 +24,7 @@ impl Trainer {
 			mode,
 			input_source: TrainerInputSource::StdIn,
 			output: TrainerOutput::StdOut,
+			blindfold: false,
 			game: Game::new()
 		}
 	}
@@ -153,6 +155,7 @@ pub struct TrainerBuilder {
 	mode: TrainerMode,
 	input_source: TrainerInputSource,
 	output: TrainerOutput,
+	blindfold: bool,
 	game: Game,
 }
 
@@ -173,17 +176,24 @@ impl TrainerBuilder {
 		return self;
 	}
 
+	pub fn blindfold(mut self) -> Self {
+		self.blindfold = true;
+		return self;
+	}
+
 	pub fn build(self) -> Trainer {
 		Trainer {
-			requests: Self::get_requests(self.mode),
+			requests: self.get_requests(self.mode),
 			state: TrainerState::ReadyToRun,
 			input_source: self.input_source,
 			output: self.output,
+			blindfold: self.blindfold,
 			game: self.game,
 		}
 	}
 
-	fn get_requests(mode: TrainerMode) -> Vec<TrainerRequest> {
+	fn get_requests(&self, mode: TrainerMode) -> Vec<TrainerRequest> {
+		let maybe_board = if self.blindfold { "".to_string() } else { "{board}".to_string() };
 		match mode {
 			TrainerMode::Checks => {
 				vec![
@@ -191,7 +201,7 @@ impl TrainerBuilder {
 					"You're playing the {side} pieces.\n".to_string() +
 					&"Identify all of the checks in this position: \n".to_string() +
 					&"{moves}\n".to_string() +
-					&"{board}".to_string(),
+					&maybe_board,
 					TrainerResponseValidator::ListOfMovesFromCurrentPosition,
 					TrainerResponseEvaluator::AreAllChecksInPosition
 					)
@@ -203,7 +213,7 @@ impl TrainerBuilder {
 					"You're playing the {side} pieces.\n".to_string() +
 					&"Identify all of the captures in this position: \n".to_string() +
 					&"{moves}\n".to_string() +
-					&"{board}".to_string(),
+					&maybe_board,
 					TrainerResponseValidator::ListOfMovesFromCurrentPosition,
 					TrainerResponseEvaluator::AreAllCapturesInPosition
 					)
@@ -505,6 +515,7 @@ mod tests {
 			.with_input_source(buffer.clone())
 			.with_buffer_output()
 			.with_moves(moves.to_string())
+			.blindfold()
 			.build();
 
 		assert_eq!(trainer.input_source, buffer);
@@ -512,5 +523,6 @@ mod tests {
 		let mut expected_game = Game::new();
 		expected_game.make_moves_from_string(moves);
 		assert_eq!(trainer.game.get_board_clone(), expected_game.get_board_clone());
+		assert!(trainer.blindfold);
 	}
 }

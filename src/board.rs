@@ -1470,7 +1470,7 @@ impl Bitboard {
 		for rank in Rank::all().into_iter().rev() {
 			let rank_bb = Self::rank(rank);
 			let squares: Vec<&str> = File::all().into_iter().map(|file| if (self & &rank_bb & Self::file(file)).has_pieces() { "#" } else { " " }).collect();
-			to_return += &format!("| {:?} | {:?} | {:?} | {:?} | {:?} | {:?} | {:?} | {:?} |\n", squares[0].to_string(), squares[1].to_string(), squares[2].to_string(), squares[3].to_string(), squares[4].to_string(), squares[5].to_string(), squares[6].to_string(), squares[7]).to_string();
+			to_return += &format!("| {} | {} | {} | {} | {} | {} | {} | {} |\n", squares[0].to_string(), squares[1].to_string(), squares[2].to_string(), squares[3].to_string(), squares[4].to_string(), squares[5].to_string(), squares[6].to_string(), squares[7]).to_string();
 			to_return += &horizontal_border;
 		}
 		return to_return.to_string();
