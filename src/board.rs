@@ -2,6 +2,7 @@ use std::ops::BitAnd;
 use std::ops::BitOr;
 use std::convert::TryInto;
 use regex::Regex;
+use crate::color::Color;
 
 lazy_static! {
 	static ref FORWARD_PAWN_MOVE: Regex = Regex::new("^([a-h])([1-8])$").unwrap();
@@ -10,10 +11,6 @@ lazy_static! {
 	static ref DISAMBIGUATED_PIECE_MOVE: Regex = Regex::new("^([N,B,R,Q,K])([a-h,1-8])([a-h])([1-8])$").unwrap();
 	// TODO: Handle disambiguation of multiple queens e.g. Qa1b2
 }
-
-static WHITE_COLOR_CODE: &str = "\x1b[37m";
-static RED_COLOR_CODE: &str = "\x1b[31m";
-static RESET_COLOR_CODE: &str = "\x1b[0m";
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Board {
@@ -986,11 +983,11 @@ impl Side {
 	}
 
 	pub fn colorize(&self, s: String) -> String {
-		let color_code = match self {
-			Side::White => WHITE_COLOR_CODE,
-			Side::Black => RED_COLOR_CODE
+		let color = match self {
+			Side::White => Color::White,
+			Side::Black => Color::Red
 		};
-		format!("{}{}{}", color_code.to_string(), s, RESET_COLOR_CODE)
+		color.format(s)
 	}
 }
 

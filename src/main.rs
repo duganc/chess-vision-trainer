@@ -6,6 +6,7 @@ extern crate regex;
 mod game;
 mod board;
 mod trainer;
+mod color;
 
 use clap::{App, SubCommand, Arg};
 use text_io::read;

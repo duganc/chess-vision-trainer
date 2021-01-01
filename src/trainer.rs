@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use text_io::read;
 use crate::board::{Board, Move, Square, File, Rank, Side};
 use crate::game::{Game};
+use crate::color::Color;
 
 const DEFAULT_N_ROUNDS: usize = 20;
 const N_ROUNDS_BEFORE_SEQUENTIAL: usize = 3;
@@ -48,7 +49,7 @@ impl Trainer {
 						Ok(_result) => {
 							match self.evaluate() {
 								Ok(_evaluation) => {
-									self.emit("Correct!".to_string());
+									self.emit(Trainer::get_success("Correct!".to_string()).unwrap());
 								},
 								Err(evaluation) => {
 									self.emit(evaluation);
@@ -144,6 +145,14 @@ impl Trainer {
 
 	fn get_next_request(&self) -> Option<&TrainerRequest> {
 		self.requests.iter().filter(|x| x.get_response().is_none()).nth(0)
+	}
+
+	fn get_success(s: String) -> Result<String, String> {
+		Ok(Color::Green.format(s))
+	}
+
+	fn get_error(s: String) -> Result<String, String> {
+		Err(Color::Red.format(s))
 	}
 
 }
@@ -395,7 +404,7 @@ impl TrainerResponseValidator {
 	fn validate(&self, game: &Game, input: String) -> Result<String, String> {
 		match self {
 			Self::ListOfSquares => {
-				return Err("Not yet implemented!".to_string());
+				return Trainer::get_error("Not yet implemented!".to_string());
 			},
 			Self::ListOfSequentialMoves => {
 				if input.clone().to_lowercase() == "none" {
@@ -403,7 +412,7 @@ impl TrainerResponseValidator {
 				}
 				match game.parse_sequential_moves(input.clone()) {
 					Ok(_) => Ok(format!("{} is a valid list of sequential moves!", input.clone())),
-					Err(e) => Err(e)
+					Err(e) => Trainer::get_error(e)
 				}
 			},
 			Self::ListOfMovesFromCurrentPosition => {
@@ -412,7 +421,7 @@ impl TrainerResponseValidator {
 				}
 				match game.parse_moves_from_current_position(input.clone()) {
 					Ok(_) => Ok(format!("{} is a valid list of moves from current position!", input.clone())),
-					Err(e) => Err(e)
+					Err(e) => Trainer::get_error(e)
 				}
 			},
 		}
@@ -437,7 +446,7 @@ impl TrainerResponseEvaluator {
 					game.parse_moves_from_current_position(response)
 				};
 				match potential_checks_result {
-					Err(e) => {return Err(e);},
+					Err(e) => {return Trainer::get_error(e);},
 					Ok(checks) => {
 						let potential_checks: HashSet<Move> = checks.into_iter().collect();
 						let actual_checks: HashSet<Move> = game.get_checks().into_iter().collect();
@@ -453,7 +462,7 @@ impl TrainerResponseEvaluator {
 					game.parse_moves_from_current_position(response)
 				};
 				match potential_captures_result {
-					Err(e) => return Err(e),
+					Err(e) => return Trainer::get_error(e),
 					Ok(captures) => {
 						let potential_captures: HashSet<Move> = captures.into_iter().collect();
 						let actual_captures: HashSet<Move> = game.get_captures().into_iter().collect();
@@ -468,15 +477,15 @@ impl TrainerResponseEvaluator {
 	fn compare_move_sets(game: &Game, potential: HashSet<Move>, actual: HashSet<Move>, plural_name: String) -> Result<String, String> {
 		let non: HashSet<Move> = potential.difference(&actual).map(|x| *x).collect();
 		if non.len() > 0 {
-			return Err(format!("Incorrect!  The following are not {}: {}", plural_name, game.get_move_strings_from_current_position(non.into_iter().collect())));
+			return Trainer::get_error(format!("Incorrect!  The following are not {}: {}", plural_name, game.get_move_strings_from_current_position(non.into_iter().collect())));
 		}
 
 		let missing: HashSet<Move> = actual.difference(&potential).map(|x| *x).collect();
 		if missing.len() > 0 {
-			return Err(format!("Incorrect!  You missed the following {}: {}", plural_name, game.get_move_strings_from_current_position(missing.into_iter().collect())));
+			return Trainer::get_error(format!("Incorrect!  You missed the following {}: {}", plural_name, game.get_move_strings_from_current_position(missing.into_iter().collect())));
 		}
 
-		return Ok("Correct!".to_string());
+		return Trainer::get_success("Correct!".to_string());
 	}
 }
 
@@ -537,7 +546,7 @@ mod tests {
 		assert_eq!(trainer.get_state(), TrainerState::Finished);
 		let output = trainer.get_output();
 		match output {
-			TrainerOutput::Buffer(buffer) => assert_eq!(buffer[buffer.len() - 1], "Correct!".to_string()),
+			TrainerOutput::Buffer(buffer) => assert_eq!(buffer[buffer.len() - 1], Color::Green.format("Correct!".to_string())),
 			_ => panic!("Should have been a buffer.")
 		};
 		
