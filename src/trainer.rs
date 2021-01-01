@@ -53,12 +53,15 @@ impl Trainer {
 								},
 								Err(evaluation) => {
 									self.emit(evaluation);
+									self.state = TrainerState::Finished;
 								}
 							};
-							if self.out_of_prompts() {
-								self.state = TrainerState::Finished;
-							} else {
-								self.state = TrainerState::Running;
+							if !(self.state == TrainerState::Finished) {
+								if self.out_of_prompts() {
+									self.state = TrainerState::Finished;
+								} else {
+									self.state = TrainerState::Running;
+								}
 							}
 						},
 						Err(e) => {
@@ -501,7 +504,7 @@ impl TrainerResponseEvaluator {
 				};
 			},
 			Self::AreAllPiecePositions(piece) => {
-				let potential_positions_result = Square::squares_from_string(response);
+				let potential_positions_result = Self::parse_squares(response);
 				match potential_positions_result {
 					Err(e) => return Trainer::get_error(e),
 					Ok(positions) => {
@@ -519,6 +522,14 @@ impl TrainerResponseEvaluator {
 			Ok(Vec::new())
 		} else {
 			game.parse_moves_from_current_position(response)
+		}
+	}
+
+	fn parse_squares(response: String) -> Result<Vec<Square>, String> {
+		if response.to_lowercase() == "none" {
+			Ok(Vec::new())
+		} else {
+			Square::squares_from_string(response)
 		}
 	}
 
