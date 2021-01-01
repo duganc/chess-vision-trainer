@@ -1082,7 +1082,7 @@ impl Square {
 
 	pub fn try_parse(s: &str) -> Result<Self, String> {
 		if s.len() != 2 {
-			panic!("s should be 2 long but is {:?} ({:?})", s.len(), s);
+			return Err(format!("s should be 2 long but is {:?} ({:?})", s.len(), s));
 		}
 
 		let file_char = s.chars().nth(0).unwrap();
