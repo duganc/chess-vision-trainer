@@ -37,6 +37,14 @@ fn main() {
 						.short("b")
 						.long("blindfold")
 				)
+		).subcommand(
+			SubCommand::with_name("sequential")
+				.about("Can you find all of the checks as we walk through random moves?")
+				.arg(
+					Arg::with_name("blindfold")
+						.short("b")
+						.long("blindfold")
+				)
 		).get_matches();
 
 	if let Some(_matches) = matches.subcommand_matches("checks") {
@@ -48,6 +56,13 @@ fn main() {
 		trainer.run();
 	} else if let Some(matches) = matches.subcommand_matches("captures") {
 		let mut builder = Trainer::builder(TrainerMode::Captures);
+		if matches.is_present("blindfold") {
+			builder = builder.blindfold();
+		}
+		let mut trainer = builder.build();
+		trainer.run();
+	} else if let Some(matches) = matches.subcommand_matches("sequential") {
+		let mut builder = Trainer::builder(TrainerMode::Sequential);
 		if matches.is_present("blindfold") {
 			builder = builder.blindfold();
 		}

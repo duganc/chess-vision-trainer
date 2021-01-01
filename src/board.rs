@@ -404,6 +404,9 @@ impl Board {
 						Rank::from_str(characters.get(3).map_or("", |m| m.as_str()))
 					);
 					let source_file = File::from_str(characters.get(1).map_or("", |m| m.as_str()));
+					if File::distance(&source_file, &destination.file()) != 1 {
+						return Err(format!("{:?} and {:?} are not adjacent.", source_file, destination.file()));
+					}
 
 					let square_in_front = Square::new(source_file, destination.1);
 					let source_result = self.get_pawn_move_from_square_in_front(side, square_in_front);
@@ -1094,6 +1097,14 @@ impl Square {
 		format!("{}{}", self.0.to_string(), self.1.to_string())
 	}
 
+	pub fn file(&self) -> File {
+		self.0
+	}
+
+	pub fn rank(&self) -> Rank {
+		self.1
+	}
+
 	pub fn get_adjacent(&self, direction: Direction) -> Option<Self> {
 		let file = Some(self.0);
 		let rank = Some(self.1);
@@ -1259,6 +1270,12 @@ impl File {
 			File::G,
 			File::H,
 		]
+	}
+
+	pub fn distance(from: &Self, to: &Self) -> usize {
+		let from = *from as i8;
+		let to = *to as i8;
+		(from - to).abs().try_into().unwrap()
 	}
 
 	pub fn previous(&self) -> Option<Self> {

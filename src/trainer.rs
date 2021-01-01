@@ -34,13 +34,10 @@ impl Trainer {
 		while self.state != TrainerState::Finished {
 			match self.state {
 				TrainerState::ReadyToRun => {
-					self.state = TrainerState::PreparingGame;
-				},
-				TrainerState::PreparingGame => {
-					self.prepare_game();
 					self.state = TrainerState::Running;
-				}
+				},
 				TrainerState::Running => {
+					self.transform();
 					self.prompt();
 					self.state = TrainerState::WaitingForInput;
 				},
@@ -78,11 +75,11 @@ impl Trainer {
 		self.requests.iter().filter(|x| x.get_response().is_none()).count() == 0
 	}
 
-	fn prepare_game(&mut self) {
+	fn transform(&mut self) {
 		let request = self.requests.iter_mut().filter(|x| x.get_response().is_none()).map(|x| x).nth(0);
 		match request {
 			Some(r) => {
-				r.prepare_game(&mut self.game)
+				r.transform(&mut self.game)
 			},
 			None => panic!("There are no more requests!")
 		};
@@ -198,26 +195,54 @@ impl TrainerBuilder {
 			TrainerMode::Checks => {
 				vec![
 					TrainerRequest::new(
-					"You're playing the {side} pieces.\n".to_string() +
-					&"Identify all of the checks in this position: \n".to_string() +
-					&"{moves}\n".to_string() +
-					&maybe_board,
-					TrainerResponseValidator::ListOfMovesFromCurrentPosition,
-					TrainerResponseEvaluator::AreAllChecksInPosition
+						"You're playing the {side} pieces.\n".to_string() +
+						&"Identify all of the checks in this position: \n".to_string() +
+						&"{moves}\n".to_string() +
+						&maybe_board,
+						TrainerResponseTransformer::MakeRandomMovesAndEndOnRandomSide,
+						TrainerResponseValidator::ListOfMovesFromCurrentPosition,
+						TrainerResponseEvaluator::AreAllChecksInPosition
 					)
 				]
 			},
 			TrainerMode::Captures => {
 				vec![
 					TrainerRequest::new(
-					"You're playing the {side} pieces.\n".to_string() +
-					&"Identify all of the captures in this position: \n".to_string() +
-					&"{moves}\n".to_string() +
-					&maybe_board,
-					TrainerResponseValidator::ListOfMovesFromCurrentPosition,
-					TrainerResponseEvaluator::AreAllCapturesInPosition
+						"You're playing the {side} pieces.\n".to_string() +
+						&"Identify all of the captures in this position: \n".to_string() +
+						&"{moves}\n".to_string() +
+						&maybe_board,
+						TrainerResponseTransformer::MakeRandomMovesAndEndOnRandomSide,
+						TrainerResponseValidator::ListOfMovesFromCurrentPosition,
+						TrainerResponseEvaluator::AreAllCapturesInPosition
 					)
 				]
+			},
+			TrainerMode::Sequential => {
+				let mut to_return = vec![
+					TrainerRequest::new(
+						"You're playing the {side} pieces.\n".to_string() +
+						&"Identify all of the checks in this position: \n".to_string() +
+						&"{moves}\n".to_string() +
+						&maybe_board,
+						TrainerResponseTransformer::DoNothing,
+						TrainerResponseValidator::ListOfMovesFromCurrentPosition,
+						TrainerResponseEvaluator::AreAllChecksInPosition
+					)
+				];
+				for _i in 0..(2*DEFAULT_N_ROUNDS - 1) {
+					let request = TrainerRequest::new(
+						"You're playing the {side} pieces.\n".to_string() +
+						&"Identify all of the checks in this position: \n".to_string() +
+						&"{moves}\n".to_string() +
+						&maybe_board,
+						TrainerResponseTransformer::MakeRandomMove,
+						TrainerResponseValidator::ListOfMovesFromCurrentPosition,
+						TrainerResponseEvaluator::AreAllChecksInPosition
+					);
+					to_return.push(request);
+				}
+				return to_return;
 			}
 		}
 	}
@@ -227,13 +252,13 @@ impl TrainerBuilder {
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TrainerMode {
 	Checks,
-	Captures
+	Captures,
+	Sequential,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TrainerState {
 	ReadyToRun,
-	PreparingGame,
 	Running,
 	WaitingForInput,
 	Finished
@@ -268,6 +293,7 @@ impl TrainerInputSource {
 
 struct TrainerRequest {
 	prompt: String,
+	transformer: TrainerResponseTransformer,
 	validator: TrainerResponseValidator,
 	evaluator: TrainerResponseEvaluator,
 	response: Option<String>
@@ -275,9 +301,10 @@ struct TrainerRequest {
 
 impl TrainerRequest {
 
-	fn new(prompt: String, validator: TrainerResponseValidator, evaluator: TrainerResponseEvaluator) -> Self {
+	fn new(prompt: String, transformer: TrainerResponseTransformer, validator: TrainerResponseValidator, evaluator: TrainerResponseEvaluator) -> Self {
 		Self {
 			prompt,
+			transformer,
 			validator,
 			evaluator,
 			response: None
@@ -296,8 +323,8 @@ impl TrainerRequest {
 		self.response = Some(response);
 	}
 
-	fn prepare_game(&mut self, game: &mut Game) {
-		self.evaluator.prepare_game(game)
+	fn transform(&mut self, game: &mut Game) {
+		self.transformer.transform(game)
 	}
 
 	fn validate(&mut self, game: &Game, input: String) -> Result<String, String> {
@@ -320,6 +347,31 @@ impl TrainerRequest {
 				return self.evaluator.evaluate(game, response.to_string());
 			},
 			None => panic!("Evaluate called without a validated response!")
+		}
+	}
+
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum TrainerResponseTransformer {
+	DoNothing,
+	MakeRandomMovesAndEndOnRandomSide,
+	MakeRandomMove
+}
+
+impl TrainerResponseTransformer {
+
+	fn transform(&self, game: &mut Game) {
+		match self {
+			Self::DoNothing => {},
+			Self::MakeRandomMovesAndEndOnRandomSide => {
+				if game.get_moves().len() == 0 {
+					game.make_random_moves_and_end_on_random_side(DEFAULT_N_ROUNDS);
+				}
+			},
+			Self::MakeRandomMove => {
+				game.make_random_move();
+			}
 		}
 	}
 
@@ -357,7 +409,7 @@ impl TrainerResponseValidator {
 					Ok(_) => Ok(format!("{} is a valid list of moves from current position!", input.clone())),
 					Err(e) => Err(e)
 				}
-			}
+			},
 		}
 	}
 
@@ -370,23 +422,6 @@ enum TrainerResponseEvaluator {
 }
 
 impl TrainerResponseEvaluator {
-
-	fn prepare_game(&self, game: &mut Game) {
-		match self {
-			Self::AreAllChecksInPosition => {
-				if game.get_moves().len() == 0 {
-					game.make_random_moves_and_end_on_random_side(DEFAULT_N_ROUNDS);
-				}
-			},
-			Self::AreAllCapturesInPosition => {
-				if game.get_moves().len() == 0 {
-					game.make_random_moves_and_end_on_random_side(DEFAULT_N_ROUNDS);
-				}
-			}
-		}
-
-	}
-
 
 	fn evaluate(&self, game: &Game, response: String) -> Result<String, String> {
 		match self {
