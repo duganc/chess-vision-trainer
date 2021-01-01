@@ -1,7 +1,7 @@
 use rand::{seq::IteratorRandom, thread_rng};
 use rand::rngs::ThreadRng;
 use rand::prelude::*;
-use crate::board::{Board, Move, Square, Side, Rank, File};
+use crate::board::{Board, Move, Square, Side, Rank, File, Piece};
 
 
 #[derive(Debug)]
@@ -95,6 +95,10 @@ impl Game {
 
 	pub fn get_captures(&self) -> Vec<Move> {
 		self.board.get_captures(self.next_to_act)
+	}
+
+	pub fn get_piece_positions(&self, piece: Piece) -> Vec<Square> {
+		self.board.get_side_pieces(self.next_to_act, piece)
 	}
 
 	pub fn parse_moves_from_current_position(&self, s: String) -> Result<Vec<Move>, String> {

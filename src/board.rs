@@ -554,6 +554,10 @@ impl Board {
 		}
 	}
 
+	pub fn get_side_pieces(&self, side: Side, piece: Piece) -> Vec<Square> {
+		self.get_side_pieces_bitboard(side, piece).to_squares()
+	}
+
 	fn get_side_pieces_bitboard(&self, side: Side, piece: Piece) -> Bitboard {
 		self.get_side_bitboard(side) & self.get_pieces_bitboard(piece)
 	}
@@ -1076,7 +1080,7 @@ impl Square {
 		Square(file, rank)
 	}
 
-	pub fn from_string(s: &str) -> Self {
+	pub fn try_parse(s: &str) -> Result<Self, String> {
 		if s.len() != 2 {
 			panic!("s should be 2 long but is {:?} ({:?})", s.len(), s);
 		}
@@ -1087,11 +1091,49 @@ impl Square {
 		let file = File::from_char(file_char);
 		let rank = Rank::from_char(rank_char);
 
-		Square(file, rank)
+		Ok(Square(file, rank))
+	}
+
+	pub fn from_string(s: &str) -> Self {
+		match Self::try_parse(s) {
+			Ok(s) => s,
+			Err(e) => panic!(e)
+		}
+	}
+
+	pub fn squares_from_string(s: String) -> Result<Vec<Self>, String> {
+		let s = s.replace("\n", "");
+		let s = s.replace("\t", "");
+		let s = s.replace(" ", "");
+
+		let split_string: Vec<&str> = s.split(",").collect();
+
+		let parsing_results: Vec<Result<Square, String>> = split_string.into_iter().map(|x| Self::try_parse(x)).collect();
+
+		let maybe_error =  parsing_results.iter().filter(|x| x.is_err()).next();
+
+		match maybe_error {
+			Some(Err(e)) => return Err(e.to_string()),
+			_ => {}
+		};
+
+		return Ok(parsing_results.into_iter().map(|x| x.unwrap()).collect());
 	}
 
 	pub fn to_string(&self) -> String {
 		format!("{}{}", self.0.to_string(), self.1.to_string())
+	}
+
+	pub fn squares_to_string(squares: Vec<Self>) -> String {
+		let mut to_return = "".to_string();
+		if squares.len() == 0 {
+			return to_return;
+		}
+
+		for square in squares {
+			to_return += &format!("{},", &square.to_string());
+		}
+		return to_return[0..(to_return.len() - 1)].to_string();
 	}
 
 	pub fn file(&self) -> File {
@@ -1910,6 +1952,21 @@ mod tests {
 		assert_eq!(squares.len(), 2);
 		assert!(squares.contains(&Square::from_string("b7")));
 		assert!(squares.contains(&Square::from_string("h2")));
+	}
+
+	#[test]
+	fn squares_instantiate_from_string() {
+		let squares = Square::squares_from_string("a8,\n\tf6,     h1".to_string());
+		assert_eq!(
+			squares,
+			Ok(
+				vec![
+					Square(File::A, Rank::Eight),
+					Square(File::F, Rank::Six),
+					Square(File::H, Rank::One),
+				]
+			)
+		);
 	}
 
 	#[test]
