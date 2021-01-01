@@ -29,6 +29,10 @@ fn main() {
 					Arg::with_name("blindfold")
 						.short("b")
 						.long("blindfold")
+				).arg(
+					Arg::with_name("whites_perspective_only")
+						.short("w")
+						.long("whites-perspective-only")
 				)
 		).subcommand(
 			SubCommand::with_name("captures")
@@ -37,6 +41,10 @@ fn main() {
 					Arg::with_name("blindfold")
 						.short("b")
 						.long("blindfold")
+				).arg(
+					Arg::with_name("whites_perspective_only")
+						.short("w")
+						.long("whites-perspective-only")
 				)
 		).subcommand(
 			SubCommand::with_name("sequential")
@@ -45,6 +53,10 @@ fn main() {
 					Arg::with_name("blindfold")
 						.short("b")
 						.long("blindfold")
+				).arg(
+					Arg::with_name("whites_perspective_only")
+						.short("w")
+						.long("whites-perspective-only")
 				)
 		).subcommand(
 			SubCommand::with_name("position")
@@ -53,6 +65,10 @@ fn main() {
 					Arg::with_name("blindfold")
 						.short("b")
 						.long("blindfold")
+				).arg(
+					Arg::with_name("whites_perspective_only")
+						.short("w")
+						.long("whites-perspective-only")
 				)
 		).get_matches();
 
@@ -61,12 +77,18 @@ fn main() {
 		if matches.is_present("blindfold") {
 			builder = builder.blindfold();
 		}
+		if matches.is_present("whites-perspective-only") {
+			builder = builder.whites_perspective_only();
+		}
 		let mut trainer = builder.build();
 		trainer.run();
 	} else if let Some(matches) = matches.subcommand_matches("captures") {
 		let mut builder = Trainer::builder(TrainerMode::Captures);
 		if matches.is_present("blindfold") {
 			builder = builder.blindfold();
+		}
+		if matches.is_present("whites-perspective-only") {
+			builder = builder.whites_perspective_only();
 		}
 		let mut trainer = builder.build();
 		trainer.run();
@@ -75,12 +97,18 @@ fn main() {
 		if matches.is_present("blindfold") {
 			builder = builder.blindfold();
 		}
+		if matches.is_present("whites-perspective-only") {
+			builder = builder.whites_perspective_only();
+		}
 		let mut trainer = builder.build();
 		trainer.run();
 	} else if let Some(matches) = matches.subcommand_matches("position") {
 		let mut builder = Trainer::builder(TrainerMode::Position);
 		if matches.is_present("blindfold") {
 			builder = builder.blindfold();
+		}
+		if matches.is_present("whites-perspective-only") {
+			builder = builder.whites_perspective_only();
 		}
 		let mut trainer = builder.build();
 		trainer.run();
