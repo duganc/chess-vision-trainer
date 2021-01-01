@@ -7,6 +7,7 @@ use crate::board::{Board, Move, Square, File, Rank, Side};
 use crate::game::{Game};
 
 const DEFAULT_N_ROUNDS: usize = 20;
+const N_ROUNDS_BEFORE_SEQUENTIAL: usize = 3;
 
 pub struct Trainer {
 	requests: Vec<TrainerRequest>,
@@ -225,12 +226,12 @@ impl TrainerBuilder {
 						&"Identify all of the checks in this position: \n".to_string() +
 						&"{moves}\n".to_string() +
 						&maybe_board,
-						TrainerResponseTransformer::DoNothing,
+						TrainerResponseTransformer::MakeRandomMoves(2*N_ROUNDS_BEFORE_SEQUENTIAL),
 						TrainerResponseValidator::ListOfMovesFromCurrentPosition,
 						TrainerResponseEvaluator::AreAllChecksInPosition
 					)
 				];
-				for _i in 0..(2*DEFAULT_N_ROUNDS - 1) {
+				for _i in 0..(2*(DEFAULT_N_ROUNDS - N_ROUNDS_BEFORE_SEQUENTIAL)) {
 					let request = TrainerRequest::new(
 						"You're playing the {side} pieces.\n".to_string() +
 						&"Identify all of the checks in this position: \n".to_string() +
@@ -355,8 +356,9 @@ impl TrainerRequest {
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum TrainerResponseTransformer {
 	DoNothing,
+	MakeRandomMove,
+	MakeRandomMoves(usize),
 	MakeRandomMovesAndEndOnRandomSide,
-	MakeRandomMove
 }
 
 impl TrainerResponseTransformer {
@@ -364,14 +366,17 @@ impl TrainerResponseTransformer {
 	fn transform(&self, game: &mut Game) {
 		match self {
 			Self::DoNothing => {},
+			Self::MakeRandomMove => {
+				game.make_random_move();
+			},
+			Self::MakeRandomMoves(n) => {
+				game.make_random_moves(*n);
+			},
 			Self::MakeRandomMovesAndEndOnRandomSide => {
 				if game.get_moves().len() == 0 {
 					game.make_random_moves_and_end_on_random_side(DEFAULT_N_ROUNDS);
 				}
 			},
-			Self::MakeRandomMove => {
-				game.make_random_move();
-			}
 		}
 	}
 
