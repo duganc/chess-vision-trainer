@@ -225,17 +225,7 @@ impl TrainerBuilder {
 				self.get_moves_identification_drill(TrainerResponseEvaluator::AreAllChecksInPosition, "checks".to_string())
 			},
 			TrainerMode::Captures => {
-				vec![
-					TrainerRequest::new(
-						"You're playing the {side} pieces.\n".to_string() +
-						&"Identify all of the captures in this position: \n".to_string() +
-						&"{moves}\n".to_string() +
-						&maybe_board,
-						TrainerResponseTransformer::MakeRandomMovesAndEndOnRandomSide,
-						TrainerResponseValidator::ListOfMovesFromCurrentPosition,
-						TrainerResponseEvaluator::AreAllCapturesInPosition
-					)
-				]
+				self.get_moves_identification_drill(TrainerResponseEvaluator::AreAllCapturesInPosition, "captures".to_string())
 			},
 			TrainerMode::Sequential => {
 				let mut to_return = vec![
