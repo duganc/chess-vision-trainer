@@ -46,6 +46,14 @@ fn main() {
 						.short("b")
 						.long("blindfold")
 				)
+		).subcommand(
+			SubCommand::with_name("position")
+				.about("Can you identify the positions of all of the pieces?")
+				.arg(
+					Arg::with_name("blindfold")
+						.short("b")
+						.long("blindfold")
+				)
 		).get_matches();
 
 	if let Some(_matches) = matches.subcommand_matches("checks") {
@@ -64,6 +72,13 @@ fn main() {
 		trainer.run();
 	} else if let Some(matches) = matches.subcommand_matches("sequential") {
 		let mut builder = Trainer::builder(TrainerMode::Sequential);
+		if matches.is_present("blindfold") {
+			builder = builder.blindfold();
+		}
+		let mut trainer = builder.build();
+		trainer.run();
+	} else if let Some(matches) = matches.subcommand_matches("position") {
+		let mut builder = Trainer::builder(TrainerMode::Position);
 		if matches.is_present("blindfold") {
 			builder = builder.blindfold();
 		}

@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::collections::HashSet;
 use text_io::read;
-use crate::board::{Board, Move, Square, File, Rank, Side};
+use crate::board::{Board, Move, Square, File, Rank, Side, Piece};
 use crate::game::{Game};
 use crate::color::Color;
 
@@ -253,6 +253,35 @@ impl TrainerBuilder {
 					to_return.push(request);
 				}
 				return to_return;
+			},
+			TrainerMode::Position => {
+				let mut pieces = Piece::all();
+				let first = pieces.pop().unwrap();
+				let mut to_return = vec![
+					TrainerRequest::new(
+						"You're playing the {side} pieces.\n".to_string() +
+						&format!("Where are all pieces of type {:?}: \n", first) +
+						&"{moves}\n".to_string() +
+						&maybe_board,
+						TrainerResponseTransformer::MakeRandomMovesAndEndOnRandomSide,
+						TrainerResponseValidator::ListOfSquares,
+						TrainerResponseEvaluator::AreAllPiecePositions(first)
+					)
+				];
+
+				for piece in pieces.into_iter().rev() {
+					let request = TrainerRequest::new(
+						"You're playing the {side} pieces.\n".to_string() +
+						&format!("Where are all pieces of type {:?}: \n", piece) +
+						&"{moves}\n".to_string() +
+						&maybe_board,
+						TrainerResponseTransformer::DoNothing,
+						TrainerResponseValidator::ListOfSquares,
+						TrainerResponseEvaluator::AreAllPiecePositions(piece)
+					);
+					to_return.push(request);
+				}
+				return to_return;
 			}
 		}
 	}
@@ -264,6 +293,7 @@ pub enum TrainerMode {
 	Checks,
 	Captures,
 	Sequential,
+	Position,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -404,7 +434,13 @@ impl TrainerResponseValidator {
 	fn validate(&self, game: &Game, input: String) -> Result<String, String> {
 		match self {
 			Self::ListOfSquares => {
-				return Trainer::get_error("Not yet implemented!".to_string());
+				if input.clone().to_lowercase() == "none" {
+					return Ok(format!("{} is a valid list of sequential squares!", input.clone()))
+				}
+				match Square::squares_from_string(input.clone()) {
+					Ok(_squares) => return Ok(format!("{} is a valid list of squares!", input.clone())),
+					Err(e) => Trainer::get_error(e)
+				}
 			},
 			Self::ListOfSequentialMoves => {
 				if input.clone().to_lowercase() == "none" {
@@ -433,6 +469,7 @@ impl TrainerResponseValidator {
 enum TrainerResponseEvaluator {
 	AreAllChecksInPosition,
 	AreAllCapturesInPosition,
+	AreAllPiecePositions(Piece),
 }
 
 impl TrainerResponseEvaluator {
@@ -440,11 +477,7 @@ impl TrainerResponseEvaluator {
 	fn evaluate(&self, game: &Game, response: String) -> Result<String, String> {
 		match self {
 			Self::AreAllChecksInPosition => {
-				let potential_checks_result = if response.to_lowercase() == "none" {
-					Ok(Vec::new())
-				} else {
-					game.parse_moves_from_current_position(response)
-				};
+				let potential_checks_result = Self::parse_moves_from_current_position(game, response);
 				match potential_checks_result {
 					Err(e) => {return Trainer::get_error(e);},
 					Ok(checks) => {
@@ -456,11 +489,7 @@ impl TrainerResponseEvaluator {
 				};
 			},
 			Self::AreAllCapturesInPosition => {
-				let potential_captures_result = if response.to_lowercase() == "none" {
-					Ok(Vec::new())
-				} else {
-					game.parse_moves_from_current_position(response)
-				};
+				let potential_captures_result = Self::parse_moves_from_current_position(game, response);
 				match potential_captures_result {
 					Err(e) => return Trainer::get_error(e),
 					Ok(captures) => {
@@ -470,7 +499,26 @@ impl TrainerResponseEvaluator {
 						
 					}
 				};
+			},
+			Self::AreAllPiecePositions(piece) => {
+				let potential_positions_result = Square::squares_from_string(response);
+				match potential_positions_result {
+					Err(e) => return Trainer::get_error(e),
+					Ok(positions) => {
+						let potential_positions: HashSet<Square> = positions.into_iter().collect();
+						let actual_positions: HashSet<Square> = game.get_piece_positions(*piece).into_iter().collect();
+						return Self::compare_square_sets(potential_positions, actual_positions, format!("{:?} positions", piece));
+					}
+				}
 			}
+		}
+	}
+
+	fn parse_moves_from_current_position(game: &Game, response: String) -> Result<Vec<Move>, String> {
+		if response.to_lowercase() == "none" {
+			Ok(Vec::new())
+		} else {
+			game.parse_moves_from_current_position(response)
 		}
 	}
 
@@ -483,6 +531,20 @@ impl TrainerResponseEvaluator {
 		let missing: HashSet<Move> = actual.difference(&potential).map(|x| *x).collect();
 		if missing.len() > 0 {
 			return Trainer::get_error(format!("Incorrect!  You missed the following {}: {}", plural_name, game.get_move_strings_from_current_position(missing.into_iter().collect())));
+		}
+
+		return Trainer::get_success("Correct!".to_string());
+	}
+
+	fn compare_square_sets(potential: HashSet<Square>, actual: HashSet<Square>, plural_name: String) -> Result<String, String> {
+		let non: HashSet<Square> = potential.difference(&actual).map(|x| *x).collect();
+		if non.len() > 0 {
+			return Trainer::get_error(format!("Incorrect!  The following are not {}: {}", plural_name, Square::squares_to_string(non.into_iter().collect())));
+		}
+
+		let missing: HashSet<Square> = actual.difference(&potential).map(|x| *x).collect();
+		if missing.len() > 0 {
+			return Trainer::get_error(format!("Incorrect!  You missed the following {}: {}", plural_name, Square::squares_to_string(missing.into_iter().collect())));
 		}
 
 		return Trainer::get_success("Correct!".to_string());
