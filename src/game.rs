@@ -55,6 +55,10 @@ impl Game {
 		self.board.pretty_print()
 	}
 
+	pub fn pretty_print_board_from_perspective(&self) -> String {
+		self.board.pretty_print_from_perspective(self.get_next_to_act())
+	}
+
 	pub fn is_game_over(&self) -> bool {
 		Side::all().into_iter().any(|s| self.is_stalemate_by(s) || self.is_won_by(s))
 	}

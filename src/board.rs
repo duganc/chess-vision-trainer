@@ -112,13 +112,18 @@ impl Board {
 	}
 
 	pub fn pretty_print(&self) -> String {
-		
+		self.pretty_print_from_perspective(Side::White)
+	}
+
+	pub fn pretty_print_from_perspective(&self, side: Side) -> String {
 		let horizontal_border = "+---+---+---+---+---+---+---+---+\n".to_string();
 		let mut to_return = horizontal_border.clone();
-		for rank in Rank::all().into_iter().rev() {
+		let ranks: Vec<Rank> = if side == Side::White {Rank::all().into_iter().rev().collect()} else {Rank::all()};
+		let files: Vec<File> = if side == Side::White {File::all()} else {File::all().into_iter().rev().collect()};
+		for rank in ranks {
 			let mut squares = Vec::new();
-			for file in File::all() {
-				match self.get(Square(file, rank)) {
+			for file in &files {
+				match self.get(Square(*file, rank)) {
 					None => squares.push(" ".to_string()),
 					Some((side, piece)) => {
 						squares.push(side.colorize(piece.to_string()));
@@ -129,7 +134,6 @@ impl Board {
 			to_return += &horizontal_border;
 		}
 		return to_return.to_string();
-
 	}
 
 	pub fn add(&mut self, side: Side, piece: Piece, square: Square) {

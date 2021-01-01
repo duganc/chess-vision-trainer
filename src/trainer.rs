@@ -16,6 +16,7 @@ pub struct Trainer {
 	input_source: TrainerInputSource,
 	output: TrainerOutput,
 	blindfold: bool,
+	whites_perspective_only: bool,
 	game: Game
 }
 
@@ -27,6 +28,7 @@ impl Trainer {
 			input_source: TrainerInputSource::StdIn,
 			output: TrainerOutput::StdOut,
 			blindfold: false,
+			whites_perspective_only: false,
 			game: Game::new()
 		}
 	}
@@ -130,8 +132,15 @@ impl Trainer {
 		let next_to_act = self.game.get_next_to_act();
 		let instantiated = s.replace("{side}", &next_to_act.colorize(next_to_act.to_string()));
 		let instantiated = instantiated.replace("{moves}", &self.game.pretty_print_moves());
-		let instantiated = instantiated.replace("{board}", &self.game.pretty_print_board());
+		let instantiated = instantiated.replace("{board}", &self.pretty_print_board());
 		self.output.emit(instantiated);
+	}
+
+	fn pretty_print_board(&self) -> String {
+		match self.whites_perspective_only {
+			true => self.game.pretty_print_board(),
+			false => self.game.pretty_print_board_from_perspective()
+		}
 	}
 
 	fn update_next_request_response(&mut self, response: String) {
@@ -166,6 +175,7 @@ pub struct TrainerBuilder {
 	input_source: TrainerInputSource,
 	output: TrainerOutput,
 	blindfold: bool,
+	whites_perspective_only: bool,
 	game: Game,
 }
 
@@ -191,6 +201,11 @@ impl TrainerBuilder {
 		return self;
 	}
 
+	pub fn whites_perspective_only(mut self) -> Self {
+		self.whites_perspective_only = true;
+		return self;
+	}
+
 	pub fn build(self) -> Trainer {
 		Trainer {
 			requests: self.get_requests(self.mode),
@@ -198,6 +213,7 @@ impl TrainerBuilder {
 			input_source: self.input_source,
 			output: self.output,
 			blindfold: self.blindfold,
+			whites_perspective_only: self.whites_perspective_only,
 			game: self.game,
 		}
 	}
@@ -638,6 +654,7 @@ mod tests {
 			.with_buffer_output()
 			.with_moves(moves.to_string())
 			.blindfold()
+			.whites_perspective_only()
 			.build();
 
 		assert_eq!(trainer.input_source, buffer);
@@ -646,5 +663,6 @@ mod tests {
 		expected_game.make_moves_from_string(moves);
 		assert_eq!(trainer.game.get_board_clone(), expected_game.get_board_clone());
 		assert!(trainer.blindfold);
+		assert!(trainer.whites_perspective_only);
 	}
 }
