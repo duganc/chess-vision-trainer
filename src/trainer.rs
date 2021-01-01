@@ -222,17 +222,7 @@ impl TrainerBuilder {
 		let maybe_board = if self.blindfold { "".to_string() } else { "{board}".to_string() };
 		match mode {
 			TrainerMode::Checks => {
-				vec![
-					TrainerRequest::new(
-						"You're playing the {side} pieces.\n".to_string() +
-						&"Identify all of the checks in this position: \n".to_string() +
-						&"{moves}\n".to_string() +
-						&maybe_board,
-						TrainerResponseTransformer::MakeRandomMovesAndEndOnRandomSide,
-						TrainerResponseValidator::ListOfMovesFromCurrentPosition,
-						TrainerResponseEvaluator::AreAllChecksInPosition
-					)
-				]
+				self.get_moves_identification_drill(TrainerResponseEvaluator::AreAllChecksInPosition, "checks".to_string())
 			},
 			TrainerMode::Captures => {
 				vec![
@@ -303,6 +293,21 @@ impl TrainerBuilder {
 				return to_return;
 			}
 		}
+	}
+
+	fn get_moves_identification_drill(&self, evaluator: TrainerResponseEvaluator, plural_name: String) -> Vec<TrainerRequest> {
+		let maybe_board = if self.blindfold { "".to_string() } else { "{board}".to_string() };
+		vec![
+			TrainerRequest::new(
+				"You're playing the {side} pieces.\n".to_string() +
+				&format!("Identify all of the {} in this position: \n", plural_name) +
+				&"{moves}\n".to_string() +
+				&maybe_board,
+				TrainerResponseTransformer::MakeRandomMovesAndEndOnRandomSide,
+				TrainerResponseValidator::ListOfMovesFromCurrentPosition,
+				evaluator
+			)
+		]
 	}
 }
 
