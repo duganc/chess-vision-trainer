@@ -226,7 +226,7 @@ impl Board {
 
 	pub fn is_attacking(&self, attacker: Side, square: Square) -> bool {
 		
-		let immediate_diagonals = self.get_immediately_diagonal_vision(square);
+		let immediate_diagonals = self.get_immediately_diagonal_and_backward_vision(attacker, square);
 		if (immediate_diagonals & self.get_side_pieces_bitboard(attacker, Piece::Pawn)).has_pieces() {
 			return true;
 		}
@@ -252,6 +252,28 @@ impl Board {
 		}
 
 		return false;
+	}
+
+	pub fn has_vision(&self, from: Square, to: Square) -> bool {
+		match self.get(from) {
+			None => false,
+			Some((side, piece)) => {
+				match piece {
+					Piece::King => self.get_adjacent_vision(from).contains(to),
+					Piece::Queen => self.get_queen_vision(from).contains(to),
+					Piece::Rook => self.get_lateral_vision(from).contains(to),
+					Piece::Bishop => self.get_diagonal_vision(from).contains(to),
+					Piece::Knight => self.get_knight_vision(from).contains(to),
+					Piece::Pawn => self.get_immediately_diagonal_and_forward_vision(side, from).contains(to),
+					// TODO: Handle en passant
+				}
+			}
+		}
+
+	}
+
+	pub fn get_n_defenders(&self, side: Side, square: Square) -> usize {
+		return self.get_side_squares(side).into_iter().filter(|piece| self.has_vision(*piece, square)).count();
 	}
 
 	pub fn make_move(&mut self, m: Move) {
@@ -566,6 +588,10 @@ impl Board {
 		self.get_side_bitboard(side) & self.get_pieces_bitboard(piece)
 	}
 
+	pub fn get_side_squares(&self, side: Side) -> Vec<Square> {
+		self.get_side_bitboard(side).to_squares()
+	}
+
 	fn get_side_bitboard(&self, side: Side) -> Bitboard {
 		match side {
 			Side::White => self.white,
@@ -820,8 +846,26 @@ impl Board {
 	}
 
 	fn get_immediately_diagonal_vision(&self, square: Square) -> Bitboard {
-		let squares = Direction::diagonals().iter().map(|d| square.get_adjacent(*d)).filter(|x| !x.is_none()).map(|x| x.unwrap()).collect();
+		let squares = self.get_adjacents_from_directions(square, Direction::diagonals());
 		Bitboard::from_squares(squares)
+	}
+
+	fn get_immediately_diagonal_and_forward_vision(&self, side: Side, square: Square) -> Bitboard {
+		let forward_diagonals = Direction::get_forward_diagonals(side);
+		let vectorized_directions = vec![forward_diagonals.0, forward_diagonals.1];
+		let squares = self.get_adjacents_from_directions(square, vectorized_directions);
+		Bitboard::from_squares(squares)
+	}
+
+	fn get_immediately_diagonal_and_backward_vision(&self, side: Side, square: Square) -> Bitboard {
+		let backward_diagonals = Direction::get_forward_diagonals(Side::get_opponent(side));
+		let vectorized_directions = vec![backward_diagonals.0, backward_diagonals.1];
+		let squares = self.get_adjacents_from_directions(square, vectorized_directions);
+		Bitboard::from_squares(squares)
+	}
+
+	fn get_adjacents_from_directions(&self, square: Square, directions: Vec<Direction>) -> Vec<Square> {
+		directions.iter().map(|d| square.get_adjacent(*d)).filter(|x| !x.is_none()).map(|x| x.unwrap()).collect()
 	}
 
 	fn get_adjacent_vision(&self, square: Square) -> Bitboard {
@@ -836,6 +880,10 @@ impl Board {
 
 	fn get_lateral_vision(&self, square: Square) -> Bitboard {
 		self.get_file_vision(square) | self.get_rank_vision(square)
+	}
+
+	fn get_queen_vision(&self, square: Square) -> Bitboard {
+		self.get_diagonal_vision(square) | self.get_lateral_vision(square)
 	}
 
 	fn get_file_vision(&self, square: Square) -> Bitboard {
@@ -1082,6 +1130,16 @@ impl Square {
 
 	pub fn new(file: File, rank: Rank) -> Self {
 		Square(file, rank)
+	}
+
+	pub fn all() -> Vec<Self> {
+		let mut to_return = Vec::new();
+		for file in File::all() {
+			for rank in Rank::all() {
+				to_return.push(Square::new(file, rank));
+			}
+		}
+		return to_return;
 	}
 
 	pub fn try_parse(s: &str) -> Result<Self, String> {
@@ -1505,6 +1563,10 @@ impl Bitboard {
 	}
 
 	pub fn is_occupied(&self, square: Square) -> bool {
+		self.contains(square)
+	}
+
+	pub fn contains(&self, square: Square) -> bool {
 		(&Self::square(square) & self).0 > 0
 	}
 
@@ -1905,6 +1967,25 @@ mod tests {
 	}
 
 	#[test]
+	fn board_detects_attackers() {
+		
+		let mut board = Board::starting_position();
+		assert!(!board.has_vision(Square::from_string("e6"), Square::from_string("b5"))); // nonsense
+		assert!(board.has_vision(Square::from_string("a1"), Square::from_string("b1")));
+		assert!(board.has_vision(Square::from_string("a1"), Square::from_string("a2")));
+		assert!(!board.has_vision(Square::from_string("c1"), Square::from_string("e3"))); // blocked
+
+		board.make_move(board.force_parse_move(Side::White, "d4"));
+		assert!(board.has_vision(Square::from_string("c1"), Square::from_string("e3"))); // no longer blocked
+		board.make_move(board.force_parse_move(Side::White, "e4"));
+		board.make_move(board.force_parse_move(Side::White, "Qh5"));
+
+		assert!(board.has_vision(Square::from_string("h5"), Square::from_string("f7")));
+		assert!(!board.has_vision(Square::from_string("h5"), Square::from_string("e8"))); // blocked
+
+	}
+
+	#[test]
 	fn board_detects_occupied_squares() {
 		let mut board = Board::empty();
 
@@ -1956,6 +2037,12 @@ mod tests {
 		assert_eq!(squares.len(), 2);
 		assert!(squares.contains(&Square::from_string("b7")));
 		assert!(squares.contains(&Square::from_string("h2")));
+	}
+
+	#[test]
+	fn squares_all_instantiates() {
+		let all_squares = Square::all();
+		assert_eq!(all_squares.len(), 64);
 	}
 
 	#[test]
