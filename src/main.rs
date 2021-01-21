@@ -11,7 +11,7 @@ mod color;
 use clap::{App, SubCommand, Arg};
 use text_io::read;
 use std::collections::{HashSet};
-use crate::trainer::{Trainer, TrainerMode};
+use crate::trainer::{Trainer, TrainerMode, Target};
 use crate::game::{Game};
 use crate::board::{Board, Side, Move};
 
@@ -70,6 +70,38 @@ fn main() {
 						.short("w")
 						.long("whites-perspective-only")
 				)
+		).subcommand(
+			SubCommand::with_name("defended")
+				.about("Can you identify the 3 most defended pieces or squares?")
+				.arg(
+					Arg::with_name("blindfold")
+						.short("b")
+						.long("blindfold")
+				).arg(
+					Arg::with_name("whites_perspective_only")
+						.short("w")
+						.long("whites-perspective-only")
+				).arg(
+					Arg::with_name("squares")
+						.short("s")
+						.long("squares")
+				)
+		).subcommand(
+			SubCommand::with_name("attacked")
+				.about("Can you identify the 3 most attacked pieces or squares?")
+				.arg(
+					Arg::with_name("blindfold")
+						.short("b")
+						.long("blindfold")
+				).arg(
+					Arg::with_name("whites_perspective_only")
+						.short("w")
+						.long("whites-perspective-only")
+				).arg(
+					Arg::with_name("squares")
+						.short("s")
+						.long("squares")
+				)
 		).get_matches();
 
 	if let Some(_matches) = matches.subcommand_matches("checks") {
@@ -104,6 +136,34 @@ fn main() {
 		trainer.run();
 	} else if let Some(matches) = matches.subcommand_matches("position") {
 		let mut builder = Trainer::builder(TrainerMode::Position);
+		if matches.is_present("blindfold") {
+			builder = builder.blindfold();
+		}
+		if matches.is_present("whites-perspective-only") {
+			builder = builder.whites_perspective_only();
+		}
+		let mut trainer = builder.build();
+		trainer.run();
+	} else if let Some(matches) = matches.subcommand_matches("defended") {
+		let target = match matches.is_present("squares") {
+			true => Target::Square,
+			false => Target::Piece,
+		};
+		let mut builder = Trainer::builder(TrainerMode::MostDefended(target));
+		if matches.is_present("blindfold") {
+			builder = builder.blindfold();
+		}
+		if matches.is_present("whites-perspective-only") {
+			builder = builder.whites_perspective_only();
+		}
+		let mut trainer = builder.build();
+		trainer.run();
+	} else if let Some(matches) = matches.subcommand_matches("attacked") {
+		let target = match matches.is_present("squares") {
+			true => Target::Square,
+			false => Target::Piece,
+		};
+		let mut builder = Trainer::builder(TrainerMode::MostAttacked(target));
 		if matches.is_present("blindfold") {
 			builder = builder.blindfold();
 		}

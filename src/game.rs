@@ -34,6 +34,10 @@ impl Game {
 		self.board.clone()
 	}
 
+	pub fn get_side_squares(&self, side: Side) -> Vec<Square> {
+		self.board.get_side_squares(side)
+	}
+
 	pub fn pretty_print_moves(&self) -> String {
 		let mut to_return = "".to_string();
 		let mut side = Side::White;
@@ -105,6 +109,18 @@ impl Game {
 		self.board.get_side_pieces(self.next_to_act, piece)
 	}
 
+	pub fn get_most_defended_squares(&self, side: Side) -> Vec<(Square, usize)> {
+		let mut to_return: Vec<(Square, usize)> = Square::all().into_iter().map(|s| (s, self.board.get_n_defenders(side, s))).collect();
+		to_return.sort_by(|x, y| y.1.cmp(&x.1));
+		return to_return;
+	}
+
+	pub fn get_most_attacked_squares(&self, side: Side) -> Vec<(Square, usize)> {
+		let mut to_return: Vec<(Square, usize)> = Square::all().into_iter().map(|s| (s, self.board.get_n_attackers(side, s))).collect();
+		to_return.sort_by(|x, y| y.1.cmp(&x.1));
+		return to_return;
+	}
+
 	pub fn parse_moves_from_current_position(&self, s: String) -> Result<Vec<Move>, String> {
 		let move_results: Vec<Result<Move, String>> = Move::parse_move_strings(s).into_iter().map(|m| self.board.try_parse_move(self.next_to_act, &m)).collect();
 		let n_errors = move_results.iter().filter(|m| m.is_err()).count();
@@ -117,6 +133,27 @@ impl Game {
 			};
 		} else {
 			return Ok(move_results.into_iter().map(|m| m.unwrap()).collect());
+		}
+	}
+
+	pub fn parse_pieces_for_next_to_act(&self, s: String) -> Result<Vec<Square>, String> {
+		match Square::squares_from_string(s) {
+			Err(e) => {return Err(e)},
+			Ok(squares) => {
+				for square in &squares {
+					match self.board.get(*square) {
+						None => {
+							return Err(format!("No piece is at {}", square.to_string()));
+						},
+						Some((side, piece)) => {
+							if side != self.next_to_act {
+								return Err(format!("The piece at {} is a {} {}", square.to_string(), side.to_string(), piece.to_string()));
+							}
+						}
+					}
+				}
+				return Ok(squares);
+			}
 		}
 	}
 
@@ -307,5 +344,39 @@ mod tests {
 			&"   c3|   d5\n".to_string() +
 			&"   e3|  Ba6\n".to_string() +
 			&"  Bh3|   h5\n".to_string());
+	}
+
+	#[test]
+	fn game_gets_most_defended_squares() {
+		let game = Game::new();
+		let most_defended = game.get_most_defended_squares(Side::White);
+		assert_eq!(most_defended.len(), 64);
+
+		let expected = vec![
+			(Square::from_string("d2"), 4),
+			(Square::from_string("e2"), 4),
+			(Square::from_string("c3"), 3),
+			(Square::from_string("f3"), 3),
+			(Square::from_string("a3"), 2),
+			(Square::from_string("b3"), 2),
+			(Square::from_string("d3"), 2),
+			(Square::from_string("e3"), 2),
+			(Square::from_string("g3"), 2),
+			(Square::from_string("h3"), 2),
+			(Square::from_string("a2"), 1),
+			(Square::from_string("b1"), 1),
+			(Square::from_string("b2"), 1),
+			(Square::from_string("c1"), 1),
+			(Square::from_string("c2"), 1),
+			(Square::from_string("d1"), 1),
+			(Square::from_string("e1"), 1),
+			(Square::from_string("f1"), 1),
+			(Square::from_string("f2"), 1),
+			(Square::from_string("g1"), 1),
+			(Square::from_string("g2"), 1),
+			(Square::from_string("h2"), 1),
+			(Square::from_string("a1"), 0),
+		];
+		assert_eq!(most_defended[..23].to_vec(), expected);
 	}
 }
