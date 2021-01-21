@@ -276,6 +276,10 @@ impl Board {
 		return self.get_side_squares(side).into_iter().filter(|piece| self.has_vision(*piece, square)).count();
 	}
 
+	pub fn get_n_attackers(&self, side: Side, square: Square) -> usize {
+		return self.get_side_squares(Side::get_opponent(side)).into_iter().filter(|piece| self.has_vision(*piece, square)).count();
+	}
+
 	pub fn make_move(&mut self, m: Move) {
 		assert!(self.is_legal_move(m), "{:?} isn't a legal move.", m);
 		self.force_make_move(m);

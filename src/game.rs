@@ -115,6 +115,12 @@ impl Game {
 		return to_return;
 	}
 
+	pub fn get_most_attacked_squares(&self, side: Side) -> Vec<(Square, usize)> {
+		let mut to_return: Vec<(Square, usize)> = Square::all().into_iter().map(|s| (s, self.board.get_n_attackers(side, s))).collect();
+		to_return.sort_by(|x, y| y.1.cmp(&x.1));
+		return to_return;
+	}
+
 	pub fn parse_moves_from_current_position(&self, s: String) -> Result<Vec<Move>, String> {
 		let move_results: Vec<Result<Move, String>> = Move::parse_move_strings(s).into_iter().map(|m| self.board.try_parse_move(self.next_to_act, &m)).collect();
 		let n_errors = move_results.iter().filter(|m| m.is_err()).count();

@@ -319,6 +319,23 @@ impl TrainerBuilder {
 						TrainerResponseEvaluator::AreNMostDefendedForNextToAct(DEFAULT_N_PIECES, target)
 					)
 				]
+			},
+			TrainerMode::MostAttacked(target) => {
+				let target_string = target.to_plural_string();
+				let validator = match target {
+					Target::Piece => TrainerResponseValidator::ListOfPiecesForNextToAct,
+					Target::Square => TrainerResponseValidator::ListOfSquares,
+				};
+				vec![
+					TrainerRequest::new(
+						format!("Identify the top {} most attacked {} for {{side}}: \n", DEFAULT_N_PIECES, target_string) +
+						&"{moves}\n".to_string() +
+						&maybe_board,
+						TrainerResponseTransformer::MakeRandomMovesAndEndOnRandomSide,
+						validator,
+						TrainerResponseEvaluator::AreNMostAttackedForNextToAct(DEFAULT_N_PIECES, target)
+					)
+				]
 			}
 		}
 	}
@@ -332,6 +349,7 @@ pub enum TrainerMode {
 	Sequential,
 	Position,
 	MostDefended(Target),
+	MostAttacked(Target),
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -533,7 +551,8 @@ enum TrainerResponseEvaluator {
 	AreAllChecksInPosition,
 	AreAllCapturesInPosition,
 	AreAllPiecePositions(Piece),
-	AreNMostDefendedForNextToAct(usize, Target)
+	AreNMostDefendedForNextToAct(usize, Target),
+	AreNMostAttackedForNextToAct(usize, Target),
 }
 
 impl TrainerResponseEvaluator {
@@ -576,48 +595,61 @@ impl TrainerResponseEvaluator {
 				}
 			},
 			Self::AreNMostDefendedForNextToAct(n, target) => {
-				let potential_squares_result = Self::parse_squares(response);
-				match potential_squares_result {
-					Err(e) => return Trainer::get_error(e),
-					Ok(squares) => {
-						let potential_squares: HashSet<Square> = squares.into_iter().collect();
+				return Self::evaluate_most_defended_or_attacked(game, *n, *target, true, response);
+			},
+			Self::AreNMostAttackedForNextToAct(n, target) => {
+				return Self::evaluate_most_defended_or_attacked(game, *n, *target, false, response);
+			}
+		}
+	}
 
-						let most_defended_squares = game.get_most_defended_squares(game.get_next_to_act());
-						let most_defended = match target {
-							Target::Square => most_defended_squares,
-							Target::Piece => {
-								let piece_squares = game.get_side_squares(game.get_next_to_act());
-								most_defended_squares.into_iter().filter(|x| piece_squares.contains(&x.0)).collect()
-							}
-						};
+	fn evaluate_most_defended_or_attacked(game: &Game, n: usize, target: Target, defended: bool, response: String) -> Result<String, String> {
+		let potential_squares_result = Self::parse_squares(response);
+		match potential_squares_result {
+			Err(e) => return Trainer::get_error(e),
+			Ok(squares) => {
+				let potential_squares: HashSet<Square> = squares.into_iter().collect();
 
-						let error_string = "defended squares".to_string();
-						if most_defended.len() <= *n {
-							return Self::compare_square_sets(potential_squares, most_defended.into_iter().map(|x| x.0).collect(), error_string);
-						} else {
-							let n_value = most_defended.iter().nth(*n).unwrap().1;
-							let most_defended: Vec<(Square, usize)> = most_defended.into_iter().filter(|x| x.1 >= n_value).collect();
-							let actual_squares: Vec<Square> = most_defended.iter().map(|x| x.0).collect();
-							let all_answers_valid = potential_squares.iter().all(|x| actual_squares.contains(&x));
-							if !all_answers_valid {
-								let missing = Self::get_missing_squares(potential_squares.into_iter().collect(), actual_squares);
-								return Trainer::get_error(format!("Incorrect!  These aren't the most defended {}!\n{}", target.to_plural_string(), Square::squares_to_string(missing)));
-							}
+				let most_defended_or_attacked_squares = if defended {
+					game.get_most_defended_squares(game.get_next_to_act())
+				} else {
+					game.get_most_attacked_squares(game.get_next_to_act())
+				};
 
-							// Essential are any of those strictly greater than n_value since if they're equal there could be other ones.
-							let all_essential_covered = most_defended.iter().filter(|x| x.1 > n_value).all(|x| potential_squares.contains(&x.0));
-							if !all_essential_covered {
-								let more_defended = Self::get_missing_squares(most_defended.into_iter().filter(|x| x.1 > n_value).map(|x| x.0).collect(), potential_squares.into_iter().collect());
-								return Trainer::get_error(format!("Incorrect!  There are more defended {}!\n{}", target.to_plural_string(), Square::squares_to_string(more_defended)));
-							}
-
-							if potential_squares.len() < *n {
-								return Trainer::get_error(format!("Incorrect!  Only {} {} were provided but the following are all defended!\n{}", potential_squares.len(), target.to_plural_string(), Square::squares_to_string(actual_squares)));
-							}
-
-							return Trainer::get_success("Correct!".to_string());
-						}
+				let most_defended_or_attacked = match target {
+					Target::Square => most_defended_or_attacked_squares,
+					Target::Piece => {
+						let piece_squares = game.get_side_squares(game.get_next_to_act());
+						most_defended_or_attacked_squares.into_iter().filter(|x| piece_squares.contains(&x.0)).collect()
 					}
+				};
+
+				let defended_or_attacked_string = (if defended {"defended"} else {"attacked"}).to_string();
+				let error_string = format!("{} squares", defended_or_attacked_string);
+				if most_defended_or_attacked.len() <= n {
+					return Self::compare_square_sets(potential_squares, most_defended_or_attacked.into_iter().map(|x| x.0).collect(), error_string);
+				} else {
+					let n_value = most_defended_or_attacked.iter().nth(n).unwrap().1;
+					let most_defended_or_attacked: Vec<(Square, usize)> = most_defended_or_attacked.into_iter().filter(|x| x.1 >= n_value).collect();
+					let actual_squares: Vec<Square> = most_defended_or_attacked.iter().map(|x| x.0).collect();
+					let all_answers_valid = potential_squares.iter().all(|x| actual_squares.contains(&x));
+					if !all_answers_valid {
+						let missing = Self::get_missing_squares(potential_squares.into_iter().collect(), actual_squares);
+						return Trainer::get_error(format!("Incorrect!  These aren't the most {} {}!\n{}", defended_or_attacked_string, target.to_plural_string(), Square::squares_to_string(missing)));
+					}
+
+					// Essential are any of those strictly greater than n_value since if they're equal there could be other ones.
+					let all_essential_covered = most_defended_or_attacked.iter().filter(|x| x.1 > n_value).all(|x| potential_squares.contains(&x.0));
+					if !all_essential_covered {
+						let more_defended_or_attacked = Self::get_missing_squares(most_defended_or_attacked.into_iter().filter(|x| x.1 > n_value).map(|x| x.0).collect(), potential_squares.into_iter().collect());
+						return Trainer::get_error(format!("Incorrect!  There are more {} {}!\n{}", defended_or_attacked_string, target.to_plural_string(), Square::squares_to_string(more_defended_or_attacked)));
+					}
+
+					if potential_squares.len() < n {
+						return Trainer::get_error(format!("Incorrect!  Only {} {} were provided but the following are all {}!\n{}", potential_squares.len(), target.to_plural_string(), defended_or_attacked_string, Square::squares_to_string(actual_squares)));
+					}
+
+					return Trainer::get_success("Correct!".to_string());
 				}
 			}
 		}
