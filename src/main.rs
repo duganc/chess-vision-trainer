@@ -102,6 +102,9 @@ fn main() {
 						.short("s")
 						.long("squares")
 				)
+		).subcommand(
+			SubCommand::with_name("color")
+				.about("Can you identify the 3 most attacked pieces or squares?")
 		).get_matches();
 
 	if let Some(_matches) = matches.subcommand_matches("checks") {
@@ -170,6 +173,10 @@ fn main() {
 		if matches.is_present("whites-perspective-only") {
 			builder = builder.whites_perspective_only();
 		}
+		let mut trainer = builder.build();
+		trainer.run();
+	} else if let Some(matches) = matches.subcommand_matches("color") {
+		let mut builder = Trainer::builder(TrainerMode::Color);
 		let mut trainer = builder.build();
 		trainer.run();
 	} else {

@@ -2,6 +2,8 @@ use std::ops::BitAnd;
 use std::ops::BitOr;
 use std::convert::TryInto;
 use regex::Regex;
+use rand::{seq::IteratorRandom, thread_rng};
+use rand::rngs::ThreadRng;
 use crate::color::Color;
 
 lazy_static! {
@@ -1052,6 +1054,31 @@ impl Side {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
+pub enum SquareColor {
+	Light,
+	Dark
+}
+
+impl SquareColor {
+
+	pub fn try_parse(s: String) -> Result<Self, String> {
+		match s.to_lowercase().as_str() {
+			"white" | "light" => {return Ok(SquareColor::Light);},
+			"black" | "dark" => {return Ok(SquareColor::Dark);},
+			_ => {return Err(format!("{} is not a valid square color!", s.clone()));}
+		}
+	}
+
+	pub fn to_string(&self) -> String {
+		match self {
+			Self::Light => "Light".to_string(),
+			Self::Dark => "Dark".to_string(),
+		}
+	}
+
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Piece {
 	Pawn,
 	Knight,
@@ -1186,6 +1213,10 @@ impl Square {
 		return Ok(parsing_results.into_iter().map(|x| x.unwrap()).collect());
 	}
 
+	pub fn get_random() -> Self {
+		Self::new(File::get_random(), Rank::get_random())
+	}
+
 	pub fn to_string(&self) -> String {
 		format!("{}{}", self.0.to_string(), self.1.to_string())
 	}
@@ -1208,6 +1239,14 @@ impl Square {
 
 	pub fn rank(&self) -> Rank {
 		self.1
+	}
+
+	pub fn get_color(&self) -> SquareColor {
+		match ((self.file() as i8) + (self.rank() as i8)) % 2 {
+			0 => SquareColor::Dark,
+			1 => SquareColor::Light,
+			n => panic!("n % 2 returned something other than 0 or 1: {}", n)
+		}
 	}
 
 	pub fn get_adjacent(&self, direction: Direction) -> Option<Self> {
@@ -1336,6 +1375,10 @@ impl File {
 		Self::from_char(s.chars().nth(0).unwrap())
 	}
 
+	pub fn get_random() -> Self {
+		*Self::all().iter().choose(&mut thread_rng()).unwrap()
+	}
+
 	pub fn to_string(&self) -> String {
 		match self {
 			File::A => "a".to_string(),
@@ -1438,6 +1481,10 @@ impl Rank {
 			panic!("Invalid string length: {:?}", s);
 		}
 		Self::from_char(s.chars().nth(0).unwrap())
+	}
+
+	pub fn get_random() -> Self {
+		*Self::all().iter().choose(&mut thread_rng()).unwrap()
 	}
 
 	pub fn to_string(&self) -> String {
@@ -2085,5 +2132,14 @@ mod tests {
 		assert_eq!(a8.get_adjacent(Direction::Right), Some(Square(File::B, Rank::Eight)));
 		assert_eq!(h1.get_adjacent(Direction::Right), None);
 		assert_eq!(d8.get_adjacent(Direction::UpLeft), None);
+	}
+
+	#[test]
+	fn square_gets_color() {
+		assert_eq!(Square::from_string("h1").get_color(), SquareColor::Light);
+		assert_eq!(Square::from_string("h2").get_color(), SquareColor::Dark);
+		assert_eq!(Square::from_string("g2").get_color(), SquareColor::Light);
+		assert_eq!(Square::from_string("a1").get_color(), SquareColor::Dark);
+		assert_eq!(Square::from_string("d5").get_color(), SquareColor::Light);
 	}
 }
