@@ -1190,7 +1190,7 @@ impl Square {
 	pub fn from_string(s: &str) -> Self {
 		match Self::try_parse(s) {
 			Ok(s) => s,
-			Err(e) => panic!(e)
+			Err(e) => panic!("{}", e)
 		}
 	}
 
