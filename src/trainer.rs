@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::collections::HashSet;
 use text_io::read;
-use crate::board::{Board, Move, Square, File, Rank, Side, Piece};
+use crate::board::{Board, Move, Square, File, Rank, Side, Piece, SquareColor};
 use crate::game::{Game};
 use crate::color::Color;
 
@@ -336,6 +336,17 @@ impl TrainerBuilder {
 						TrainerResponseEvaluator::AreNMostAttackedForNextToAct(DEFAULT_N_PIECES, target)
 					)
 				]
+			},
+			TrainerMode::Color => {
+				let square = Square::get_random();
+				vec![
+					TrainerRequest::new(
+						format!("Identify color of the following square: {}\n", square.to_string()).to_string(),
+						TrainerResponseTransformer::DoNothing,
+						TrainerResponseValidator::SquareColor,
+						TrainerResponseEvaluator::IsSquareColor(square.get_color()),
+					)
+				]
 			}
 		}
 	}
@@ -350,6 +361,7 @@ pub enum TrainerMode {
 	Position,
 	MostDefended(Target),
 	MostAttacked(Target),
+	Color,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -495,6 +507,7 @@ impl TrainerResponseTransformer {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum TrainerResponseValidator {
+	SquareColor,
 	ListOfSquares,
 	ListOfSequentialMoves,
 	ListOfMovesFromCurrentPosition,
@@ -505,6 +518,12 @@ impl TrainerResponseValidator {
 
 	fn validate(&self, game: &Game, input: String) -> Result<String, String> {
 		match self {
+			Self::SquareColor => {
+				match SquareColor::try_parse(input.clone()) {
+					Ok(actual) => {return Ok(format!("{} is a valid square color!", input.clone()))},
+					Err(e) => {return Err(e)},
+				}
+			}
 			Self::ListOfSquares => {
 				if input.clone().to_lowercase() == "none" {
 					return Ok(format!("{} is a valid list of sequential squares!", input.clone()))
@@ -548,6 +567,7 @@ impl TrainerResponseValidator {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum TrainerResponseEvaluator {
+	IsSquareColor(SquareColor),
 	AreAllChecksInPosition,
 	AreAllCapturesInPosition,
 	AreAllPiecePositions(Piece),
@@ -559,6 +579,18 @@ impl TrainerResponseEvaluator {
 
 	fn evaluate(&self, game: &Game, response: String) -> Result<String, String> {
 		match self {
+			Self::IsSquareColor(expected) => {
+				match SquareColor::try_parse(response.clone()) {
+					Ok(actual) => {
+						if actual == *expected {
+							return Ok(format!("{} is correct!", actual.to_string()));
+						} else {
+							return Err(format!("{} is incorrect.", actual.to_string()))
+						}
+					},
+					Err(e) => {return Err(e)},
+				}
+			}
 			Self::AreAllChecksInPosition => {
 				let potential_checks_result = Self::parse_moves_from_current_position(game, response);
 				match potential_checks_result {
