@@ -1108,6 +1108,28 @@ impl Piece {
 		}
 	}
 
+	pub fn get_random() -> Self {
+		*Self::all().iter().choose(&mut thread_rng()).unwrap()
+	}
+
+	pub fn try_parse(s: String) -> Result<Self, String> {
+		let c = match s.to_uppercase().chars().nth(0) {
+			None => return Err("Expected a piece but got an empty string.".to_string()),
+			Some(character) => character,
+		};
+		match Self::is_piece_char(c) {
+			true => Ok(Self::from_char(c)),
+			false => Err(format!("{} is not a valid piece.", c)),
+		}
+	}
+
+	pub fn is_piece_char(c: char) -> bool {
+		match c {
+			'P' | 'N' | 'B' | 'R' | 'Q' | 'K' => true,
+			_ => false,
+		}
+	}
+
 	pub fn to_string(&self) -> String {
 		match self {
 			Piece::Pawn => "P".to_string(),
@@ -1116,6 +1138,17 @@ impl Piece {
 			Piece::Rook => "R".to_string(),
 			Piece::Queen => "Q".to_string(),
 			Piece::King => "K".to_string(),
+		}
+	}
+
+	pub fn to_long_string(&self) -> String {
+		match self {
+			Piece::Pawn => "Pawn".to_string(),
+			Piece::Knight => "Knight".to_string(),
+			Piece::Bishop => "Bishop".to_string(),
+			Piece::Rook => "Rook".to_string(),
+			Piece::Queen => "Queen".to_string(),
+			Piece::King => "King".to_string(),
 		}
 	}
 

@@ -13,7 +13,7 @@ use text_io::read;
 use std::collections::{HashSet};
 use crate::trainer::{Trainer, TrainerMode, Target};
 use crate::game::{Game};
-use crate::board::{Board, Side, Move};
+use crate::board::{Board, Side, Move, Piece};
 
 
 fn main() {
@@ -103,6 +103,23 @@ fn main() {
 						.long("squares")
 				)
 		).subcommand(
+			SubCommand::with_name("path")
+				.about("Give the shortest path for a random piece between two random squares.")
+				.arg(
+					Arg::with_name("blindfold")
+						.short("b")
+						.long("blindfold")
+				).arg(
+					Arg::with_name("whites_perspective_only")
+						.short("w")
+						.long("whites-perspective-only")
+				).arg(
+					Arg::with_name("piece")
+						.short("p")
+						.long("piece")
+						.takes_value(true)
+				)
+		).subcommand(
 			SubCommand::with_name("color")
 				.about("Can you identify the 3 most attacked pieces or squares?")
 		).get_matches();
@@ -167,6 +184,20 @@ fn main() {
 			false => Target::Piece,
 		};
 		let mut builder = Trainer::builder(TrainerMode::MostAttacked(target));
+		if matches.is_present("blindfold") {
+			builder = builder.blindfold();
+		}
+		if matches.is_present("whites-perspective-only") {
+			builder = builder.whites_perspective_only();
+		}
+		let mut trainer = builder.build();
+		trainer.run();
+	} else if let Some(matches) = matches.subcommand_matches("path") {
+		let piece = match matches.value_of("piece") {
+			None => Piece::get_random(),
+			Some(p) => Piece::try_parse(p.to_string()).expect(format!("{} is not a valid piece!", p).as_str()),
+		};
+		let mut builder = Trainer::builder(TrainerMode::ShortestPath(piece));
 		if matches.is_present("blindfold") {
 			builder = builder.blindfold();
 		}
