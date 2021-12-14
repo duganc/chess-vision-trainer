@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::collections::HashSet;
 use text_io::read;
-use crate::board::{Board, Move, Square, File, Rank, Side, Piece, SquareColor};
+use crate::board::{Board, Move, Square, File, Rank, Side, Path, Piece, SquareColor};
 use crate::game::{Game};
 use crate::color::Color;
 
@@ -677,7 +677,13 @@ impl TrainerResponseEvaluator {
 				return Self::evaluate_most_defended_or_attacked(game, *n, *target, false, response);
 			},
 			Self::IsShortestPath(piece, starting_square, ending_square) => {
-				unimplemented!();
+				let shortest_paths = piece.get_shortest_paths(*starting_square, *ending_square).expect("A shortest paths should exist.");
+				let moves = game.parse_sequential_moves_for_current_side(response).expect("Unable to parse sequential moves for current side.");
+				if shortest_paths.contains(&Path::new(moves)) {
+					return Ok(format!("Correct!"));
+				} else {
+					return Err(format!("Incorrect!  Correct answers are: {:#?}", shortest_paths));
+				}
 			}
 		}
 	}
