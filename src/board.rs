@@ -304,15 +304,15 @@ impl Board {
 
 	fn force_make_move(&mut self, m: Move) {
 		let source = m.0;
-		let (side, _piece) = self.get(source).unwrap();
+		let (side, piece) = self.get(source).unwrap();
 		let kingside_castle = Castle::Kingside.get_king_move(side);
 		let queenside_castle = Castle::Queenside.get_king_move(side);
-		if m == kingside_castle {
+		if (piece == Piece::King) && (m == kingside_castle) {
 			let king_move = m;
 			let rook_move = Castle::Kingside.get_rook_move(side);
 			self.transform(king_move);
 			self.transform(rook_move);
-		} else if m == queenside_castle {
+		} else if (piece == Piece::King) && (m == queenside_castle) {
 			let king_move = m;
 			let rook_move = Castle::Queenside.get_rook_move(side);
 			self.transform(king_move);
@@ -2401,5 +2401,66 @@ mod tests {
 				),
 			].into_iter().collect()
 		);
+
+		assert_eq!(
+			Piece::Queen.get_shortest_paths(Square::from_string("e1"), Square::from_string("f3")),
+			vec![
+				Path::new(
+					vec![
+						Move::new(Square::from_string("e1"), Square::from_string("d1")),
+						Move::new(Square::from_string("d1"), Square::from_string("f3")),
+					]
+				),
+				Path::new(
+					vec![
+						Move::new(Square::from_string("e1"), Square::from_string("e2")),
+						Move::new(Square::from_string("e2"), Square::from_string("f3")),
+					]
+				),
+				Path::new(
+					vec![
+						Move::new(Square::from_string("e1"), Square::from_string("e3")),
+						Move::new(Square::from_string("e3"), Square::from_string("f3")),
+					]
+				),
+				Path::new(
+					vec![
+						Move::new(Square::from_string("e1"), Square::from_string("e4")),
+						Move::new(Square::from_string("e4"), Square::from_string("f3")),
+					]
+				),
+				Path::new(
+					vec![
+						Move::new(Square::from_string("e1"), Square::from_string("f1")),
+						Move::new(Square::from_string("f1"), Square::from_string("f3")),
+					]
+				),
+				Path::new(
+					vec![
+						Move::new(Square::from_string("e1"), Square::from_string("f2")),
+						Move::new(Square::from_string("f2"), Square::from_string("f3")),
+					]
+				),
+				Path::new(
+					vec![
+						Move::new(Square::from_string("e1"), Square::from_string("g3")),
+						Move::new(Square::from_string("g3"), Square::from_string("f3")),
+					]
+				),
+				Path::new(
+					vec![
+						Move::new(Square::from_string("e1"), Square::from_string("c3")),
+						Move::new(Square::from_string("c3"), Square::from_string("f3")),
+					]
+				),
+				Path::new(
+					vec![
+						Move::new(Square::from_string("e1"), Square::from_string("h1")),
+						Move::new(Square::from_string("h1"), Square::from_string("f3")),
+					]
+				),
+			].into_iter().collect()
+		);
+
 	}
 }
