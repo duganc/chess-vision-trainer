@@ -194,7 +194,7 @@ fn main() {
 		trainer.run();
 	} else if let Some(matches) = matches.subcommand_matches("path") {
 		let piece = match matches.value_of("piece") {
-			None => Piece::get_random(),
+			None => Piece::get_random_non_pawn(),
 			Some(p) => Piece::try_parse(p.to_string()).expect(format!("{} is not a valid piece!", p).as_str()),
 		};
 		let mut builder = Trainer::builder(TrainerMode::ShortestPath(piece));

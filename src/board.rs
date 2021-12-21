@@ -1135,6 +1135,10 @@ impl Path {
 		self.0[n]
 	}
 
+	pub fn get_ending_square_or_default_if_empty(&self, default: Square) -> Square {
+		self.get_ending_square().unwrap_or(default)
+	}
+
 	pub fn get_ending_square(&self) -> Option<Square> {
 		if self.len() == 0 {
 			return None;
@@ -1193,6 +1197,10 @@ impl Piece {
 		*Self::all().iter().choose(&mut thread_rng()).unwrap()
 	}
 
+	pub fn get_random_non_pawn() -> Self {
+		*Self::all_non_pawn().iter().choose(&mut thread_rng()).unwrap()
+	}
+
 	pub fn try_parse(s: String) -> Result<Self, String> {
 		let c = match s.to_uppercase().chars().nth(0) {
 			None => return Err("Expected a piece but got an empty string.".to_string()),
@@ -1244,6 +1252,16 @@ impl Piece {
 		]
 	}
 
+	pub fn all_non_pawn() -> Vec<Self> {
+		vec![
+			Piece::Knight,
+			Piece::Bishop,
+			Piece::Rook,
+			Piece::Queen,
+			Piece::King
+		]
+	}
+
 	pub fn get_shortest_paths(&self, start: Square, end: Square) -> HashSet<Path> {
 		let board = Board::singleton(Side::White, *self, start);
 		let mut calculator = ShortestPathCalculator::new(board, start, end);
@@ -1268,7 +1286,7 @@ impl ShortestPathCalculator {
 			panic!("Starting position must have a piece on it.");
 		}
 
-		let candidates = board.get_legal_moves(starting_position).into_iter().map(|m| Path::new(vec![m])).collect();
+		let candidates: VecDeque<Path> = vec![Path::empty()].into_iter().collect();
 
 		Self {
 			board,
@@ -1295,15 +1313,15 @@ impl ShortestPathCalculator {
 					return self.results.clone();
 				}
 				
-				while let Some(next_candidate) = self.candidates.pop_back() {
+				while let Some(next_candidate) = self.candidates.pop_front() {
 
-					if (self.results.len() > 0) && (next_candidate.len() > self.shortest_so_far) {
+					if (self.results.len() > 0) && (next_candidate.len() >= self.shortest_so_far) {
 						return self.results.clone();
 					}
 
 					let mut resulting_board = self.board.clone();
 					resulting_board.make_moves(next_candidate.clone().0);
-					let ending_square = next_candidate.get_ending_square().unwrap();
+					let ending_square = next_candidate.get_ending_square_or_default_if_empty(self.starting_position);
 					self.check_layer(next_candidate, resulting_board, ending_square);
 				}
 				panic!["Couldn't find shortest path!"];
@@ -1322,7 +1340,7 @@ impl ShortestPathCalculator {
 				self.results.insert(path.clone());
 				self.update_shortest_so_far(path.len())
 			}
-			self.candidates.push_front(path)
+			self.candidates.push_back(path)
 		}
 	}
 
@@ -2356,28 +2374,32 @@ mod tests {
 			vec![Path::new(vec![Move::new(Square::from_string("a3"), Square::from_string("e3"))])].into_iter().collect()
 		);
 		
-		// assert_eq!(
-		// 	Piece::Bishop.get_shortest_paths(Square::from_string("a3"), Square::from_string("f8")),
-		// 	Some(vec![Path::new(vec![Move::new(Square::from_string("a3"), Square::from_string("f8"))])].into_iter().collect())
-		// );
-				
-		// assert_eq!(
-		// 	Piece::Rook.get_shortest_paths(Square::from_string("g2"), Square::from_string("h8")),
-		// 	Some(
-		// 		vec![
-		// 			Path::new(
-		// 				vec![
-		// 					Move::new(Square::from_string("g2"), Square::from_string("h2")),
-		// 					Move::new(Square::from_string("h2"), Square::from_string("h8")),
-		// 				]
-		// 			),
-		// 			Path::new(
-		// 				vec![
-		// 					Move::new(Square::from_string("g2"), Square::from_string("g8")),
-		// 					Move::new(Square::from_string("g8"), Square::from_string("h8")),
-		// 				]
-		// 			),
-		// 		].into_iter().collect())
-		// );
+		assert_eq!(
+			Piece::Bishop.get_shortest_paths(Square::from_string("a3"), Square::from_string("f8")),
+			vec![Path::new(vec![Move::new(Square::from_string("a3"), Square::from_string("f8"))])].into_iter().collect()
+		);
+
+		assert_eq!(
+			Piece::Bishop.get_shortest_paths(Square::from_string("a3"), Square::from_string("f7")),
+			HashSet::new()
+		);
+
+		assert_eq!(
+			Piece::Rook.get_shortest_paths(Square::from_string("g2"), Square::from_string("h8")),
+			vec![
+				Path::new(
+					vec![
+						Move::new(Square::from_string("g2"), Square::from_string("h2")),
+						Move::new(Square::from_string("h2"), Square::from_string("h8")),
+					]
+				),
+				Path::new(
+					vec![
+						Move::new(Square::from_string("g2"), Square::from_string("g8")),
+						Move::new(Square::from_string("g8"), Square::from_string("h8")),
+					]
+				),
+			].into_iter().collect()
+		);
 	}
 }
