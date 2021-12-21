@@ -677,7 +677,7 @@ impl TrainerResponseEvaluator {
 				return Self::evaluate_most_defended_or_attacked(game, *n, *target, false, response);
 			},
 			Self::IsShortestPath(piece, starting_square, ending_square) => {
-				let shortest_paths = piece.get_shortest_paths(*starting_square, *ending_square).expect("A shortest paths should exist.");
+				let shortest_paths = piece.get_shortest_paths(*starting_square, *ending_square);
 				let moves = game.parse_sequential_moves_for_current_side(response).expect("Unable to parse sequential moves for current side.");
 				if shortest_paths.contains(&Path::new(moves)) {
 					return Ok(format!("Correct!"));

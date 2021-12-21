@@ -291,6 +291,12 @@ impl Board {
 		return self.get_side_squares(Side::get_opponent(side)).into_iter().filter(|piece| self.has_vision(*piece, square)).count();
 	}
 
+	pub fn make_moves(&mut self, moves: Vec<Move>) {
+		for m in moves {
+			self.make_move(m)
+		}
+	}
+
 	pub fn make_move(&mut self, m: Move) {
 		assert!(self.is_legal_move(m), "{:?} isn't a legal move.", m);
 		self.force_make_move(m);
@@ -1117,12 +1123,27 @@ impl Path {
 		Self(moves)
 	}
 
+	pub fn empty() -> Self {
+		Self(Vec::new())
+	}
+
 	pub fn len(&self) -> usize {
 		self.0.len()
 	}
 
 	pub fn get(&self, n: usize) -> Move {
 		self.0[n]
+	}
+
+	pub fn get_ending_square(&self) -> Option<Square> {
+		if self.len() == 0 {
+			return None;
+		}
+		return Some(self.0[self.len() - 1].1);
+	}
+
+	pub fn push(&mut self, m: Move) {
+		self.0.push(m);
 	}
 
 	pub fn to_postpended(&self, m: Move) -> Self {
@@ -1223,55 +1244,90 @@ impl Piece {
 		]
 	}
 
-	pub fn get_shortest_paths(&self, start: Square, end: Square) -> Option<HashSet<Path>> {
-		match self {
+	pub fn get_shortest_paths(&self, start: Square, end: Square) -> HashSet<Path> {
+		let board = Board::singleton(Side::White, *self, start);
+		let mut calculator = ShortestPathCalculator::new(board, start, end);
+		calculator.calculate()
+	}
+}
+
+#[derive(Debug)]
+pub struct ShortestPathCalculator {
+	board: Board,
+	starting_position: Square,
+	ending_position: Square,
+	candidates: VecDeque<Path>,
+	results: HashSet<Path>,
+	shortest_so_far: usize,
+}
+
+impl ShortestPathCalculator {
+
+	pub fn new(board: Board, starting_position: Square, ending_position: Square) -> Self {
+		if board.get(starting_position).is_none() {
+			panic!("Starting position must have a piece on it.");
+		}
+
+		let candidates = board.get_legal_moves(starting_position).into_iter().map(|m| Path::new(vec![m])).collect();
+
+		Self {
+			board,
+			starting_position,
+			ending_position,
+			candidates,
+			results: HashSet::new(),
+			shortest_so_far: 99,
+		}
+	}
+
+	pub fn calculate(&mut self) -> HashSet<Path> {
+		
+		let piece = self.board.get(self.starting_position).unwrap().1;
+
+		match piece {
 			Piece::King | Piece::Queen | Piece::Rook | Piece::Bishop | Piece::Knight => {
-				if (*self == Piece::Bishop) && (start.get_color() != end.get_color()) {
-					return None;
-				}
-				if start == end {
-					return Some(vec![Path::new(Vec::new())].into_iter().collect());
+				if (piece == Piece::Bishop) && (self.starting_position.get_color() != self.ending_position.get_color()) {
+					return HashSet::new();
 				}
 
-				let mut board = Board::singleton(Side::White, *self, start);
-				let single_moves = board.get_legal_moves_for_side(Side::White);
-				let mut candidates: VecDeque<Path> = single_moves.clone().into_iter().map(|m| Path::new(vec![m])).collect();
-				let mut eliminated: HashSet<Path> = candidates.clone().into_iter().collect();
-				let mut to_return: HashSet<Path> = single_moves.clone().into_iter().filter(|m| m.1 == end).map(|m| Path::new(vec![m])).collect();
-				let mut shortest_so_far = if to_return.len() > 0 {1} else {99};
-				let mut iters = 0;
+				if self.starting_position == self.ending_position {
+					self.results = vec![Path::empty()].into_iter().collect();
+					return self.results.clone();
+				}
 				
-				while candidates.len() > 0 {
-					// println!("##########################################");
-					// println!("Candidates: {:#?}", candidates);
-					let head = candidates.pop_front().unwrap();
-					println!("Head: {:?}", head);
-					let new_start = head.get(head.len() - 1).1;
-					let board = Board::singleton(Side::White, *self, new_start);
-					// println!("Eliminated: {:#?}", eliminated);
-					let moves: Vec<Move> = board.get_legal_moves_for_side(Side::White).into_iter().collect();
-					let mut paths: Vec<Path> = moves.clone().into_iter().map(|m| head.to_postpended(m)).filter(|p| !eliminated.contains(&p)).collect();
-					// println!("Moves: {:#?}", moves);
-					let successful_moves: HashSet<Move> = moves.clone().into_iter().filter(|m| m.1 == end).collect();
-					if successful_moves.len() > 0 {
-						to_return = to_return.union(&successful_moves.into_iter().map(|m| head.to_postpended(m)).collect()).into_iter().map(|x| x.clone()).collect();
-						shortest_so_far = head.len() + 1;
+				while let Some(next_candidate) = self.candidates.pop_back() {
+
+					if (self.results.len() > 0) && (next_candidate.len() > self.shortest_so_far) {
+						return self.results.clone();
 					}
 
-					candidates.append(&mut paths.clone().into_iter().filter(|c| c.len() <= shortest_so_far).collect());
-					let paths_set: HashSet<Path> = paths.into_iter().collect();
-					eliminated.extend(paths_set);
-					iters += 1;
-					// if iters > 1000 {
-					// 	panic!("{}", "Max iters reached!");
-					// }
+					let mut resulting_board = self.board.clone();
+					resulting_board.make_moves(next_candidate.clone().0);
+					let ending_square = next_candidate.get_ending_square().unwrap();
+					self.check_layer(next_candidate, resulting_board, ending_square);
 				}
-
-				return Some(to_return);
+				panic!["Couldn't find shortest path!"];
 				
 			},
 			Piece::Pawn => panic!("Shortest path for Pawns isn't well defined!"),
 		}
+	}
+
+	fn check_layer(&mut self, head: Path, board: Board, square: Square) {
+		let new_candidates = board.get_legal_moves(square);
+		for candidate in new_candidates {
+			let mut path = head.clone();
+			path.push(candidate);
+			if candidate.1 == self.ending_position {
+				self.results.insert(path.clone());
+				self.update_shortest_so_far(path.len())
+			}
+			self.candidates.push_front(path)
+		}
+	}
+
+	fn update_shortest_so_far(&mut self, l: usize) {
+		self.shortest_so_far = if l < self.shortest_so_far { l } else { self.shortest_so_far };
 	}
 }
 
@@ -2292,12 +2348,12 @@ mod tests {
 		
 		assert_eq!(
 			Piece::Rook.get_shortest_paths(Square::from_string("e3"), Square::from_string("e3")),
-			Some(vec![Path::new(Vec::new())].into_iter().collect())
+			vec![Path::new(Vec::new())].into_iter().collect()
 		);
 		
 		assert_eq!(
 			Piece::Rook.get_shortest_paths(Square::from_string("a3"), Square::from_string("e3")),
-			Some(vec![Path::new(vec![Move::new(Square::from_string("a3"), Square::from_string("e3"))])].into_iter().collect())
+			vec![Path::new(vec![Move::new(Square::from_string("a3"), Square::from_string("e3"))])].into_iter().collect()
 		);
 		
 		// assert_eq!(
