@@ -34,6 +34,14 @@ impl Game {
 		self.board.clone()
 	}
 
+	pub fn clear_board(&mut self) {
+		self.board = Board::empty();
+	}
+
+	pub fn add_piece(&mut self, side: Side, piece: Piece, square: Square) {
+		self.board.add(side, piece, square);
+	}
+
 	pub fn get_side_squares(&self, side: Side) -> Vec<Square> {
 		self.board.get_side_squares(side)
 	}
@@ -174,7 +182,24 @@ impl Game {
 		}
 
 		return Ok(to_return);
+	}
 
+	pub fn parse_sequential_moves_for_current_side(&self, s: String) -> Result<Vec<Move>, String> {
+		let move_strings = Move::parse_move_strings(s);
+		let mut parsing_board = self.get_board_clone();
+		let mut side = self.next_to_act;
+		let mut to_return = Vec::new();
+		for move_string in move_strings {
+			match parsing_board.try_parse_move(side, &move_string) {
+				Ok(m) => {
+					parsing_board.make_move(m);
+					to_return.push(m);
+				},
+				Err(e) => {return Err(e)}
+			};
+		}
+
+		return Ok(to_return);
 	}
 
 	pub fn get_moves(&self) -> Vec<Move> {

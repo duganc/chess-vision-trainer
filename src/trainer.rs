@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::collections::HashSet;
 use text_io::read;
-use crate::board::{Board, Move, Square, File, Rank, Side, Piece, SquareColor};
+use crate::board::{Board, Move, Square, File, Rank, Side, Path, Piece, SquareColor};
 use crate::game::{Game};
 use crate::color::Color;
 
@@ -337,6 +337,27 @@ impl TrainerBuilder {
 					)
 				]
 			},
+			TrainerMode::ShortestPath(piece) => {
+				let starting_square = Square::get_random();
+				let mut ending_square = Square::get_random();
+				while piece == Piece::Bishop && (starting_square.get_color() != ending_square.get_color()) {
+					ending_square = Square::get_random();
+				}
+				vec![
+					TrainerRequest::new(
+						format!(
+							"Give the shortest path to move a {} from {} to {}: \n{}",
+							piece.to_long_string(),
+							starting_square.to_string(),
+							ending_square.to_string(),
+							&maybe_board,
+						),
+						TrainerResponseTransformer::PlacePieceAtSquare(piece, starting_square),
+						TrainerResponseValidator::ListOfSequentialMovesForCurrentSide,
+						TrainerResponseEvaluator::IsShortestPath(piece, starting_square, ending_square)
+					)
+				]
+			},
 			TrainerMode::Color => {
 				let square = Square::get_random();
 				vec![
@@ -361,6 +382,7 @@ pub enum TrainerMode {
 	Position,
 	MostDefended(Target),
 	MostAttacked(Target),
+	ShortestPath(Piece),
 	Color,
 }
 
@@ -481,6 +503,8 @@ enum TrainerResponseTransformer {
 	MakeRandomMove,
 	MakeRandomMoves(usize),
 	MakeRandomMovesAndEndOnRandomSide,
+	PlacePieceAtSquare(Piece, Square),
+	PlacePieceAtRandomSquare(Piece),
 }
 
 impl TrainerResponseTransformer {
@@ -499,6 +523,15 @@ impl TrainerResponseTransformer {
 					game.make_random_moves_and_end_on_random_side(DEFAULT_N_ROUNDS);
 				}
 			},
+			Self::PlacePieceAtSquare(piece, square) => {
+				game.clear_board();
+				game.add_piece(Side::White, *piece, *square);
+			},
+			Self::PlacePieceAtRandomSquare(piece) => {
+				let square = Square::get_random();
+				game.clear_board();
+				game.add_piece(Side::White, *piece, square);
+			}
 		}
 	}
 
@@ -510,6 +543,7 @@ enum TrainerResponseValidator {
 	SquareColor,
 	ListOfSquares,
 	ListOfSequentialMoves,
+	ListOfSequentialMovesForCurrentSide,
 	ListOfMovesFromCurrentPosition,
 	ListOfPiecesForNextToAct,
 }
@@ -539,6 +573,15 @@ impl TrainerResponseValidator {
 				}
 				match game.parse_sequential_moves(input.clone()) {
 					Ok(_) => Ok(format!("{} is a valid list of sequential moves!", input.clone())),
+					Err(e) => Trainer::get_error(e)
+				}
+			},
+			Self::ListOfSequentialMovesForCurrentSide => {
+				if input.clone().to_lowercase() == "none" {
+					return Ok(format!("{} is an empty list of moves!", input.clone()));
+				}
+				match game.parse_sequential_moves_for_current_side(input.clone()) {
+					Ok(_) => Ok(format!("{} is a valid list of sequential moves for the current side!", input.clone())),
 					Err(e) => Trainer::get_error(e)
 				}
 			},
@@ -573,6 +616,7 @@ enum TrainerResponseEvaluator {
 	AreAllPiecePositions(Piece),
 	AreNMostDefendedForNextToAct(usize, Target),
 	AreNMostAttackedForNextToAct(usize, Target),
+	IsShortestPath(Piece, Square, Square),
 }
 
 impl TrainerResponseEvaluator {
@@ -631,6 +675,15 @@ impl TrainerResponseEvaluator {
 			},
 			Self::AreNMostAttackedForNextToAct(n, target) => {
 				return Self::evaluate_most_defended_or_attacked(game, *n, *target, false, response);
+			},
+			Self::IsShortestPath(piece, starting_square, ending_square) => {
+				let shortest_paths = piece.get_shortest_paths(*starting_square, *ending_square);
+				let moves = game.parse_sequential_moves_for_current_side(response).expect("Unable to parse sequential moves for current side.");
+				if shortest_paths.contains(&Path::new(moves)) {
+					return Ok(format!("Correct!"));
+				} else {
+					return Err(format!("Incorrect!  Correct answers are: {:#?}", shortest_paths));
+				}
 			}
 		}
 	}

@@ -1,5 +1,8 @@
 use std::ops::BitAnd;
 use std::ops::BitOr;
+use std::collections::HashSet;
+use std::collections::VecDeque;
+use std::collections::hash_map::DefaultHasher;
 use std::convert::TryInto;
 use regex::Regex;
 use rand::{seq::IteratorRandom, thread_rng};
@@ -111,6 +114,12 @@ impl Board {
 			castling_rights_black_kingside: true,
 			castling_rights_black_queenside: true,
 		}
+	}
+
+	pub fn singleton(side: Side, piece: Piece, square: Square) -> Self {
+		let mut board = Self::empty();
+		board.add(side, piece, square);
+		return board;
 	}
 
 	pub fn pretty_print(&self) -> String {
@@ -280,6 +289,12 @@ impl Board {
 
 	pub fn get_n_attackers(&self, side: Side, square: Square) -> usize {
 		return self.get_side_squares(Side::get_opponent(side)).into_iter().filter(|piece| self.has_vision(*piece, square)).count();
+	}
+
+	pub fn make_moves(&mut self, moves: Vec<Move>) {
+		for m in moves {
+			self.make_move(m)
+		}
 	}
 
 	pub fn make_move(&mut self, m: Move) {
@@ -1078,6 +1093,76 @@ impl SquareColor {
 
 }
 
+#[derive(Debug, Clone)]
+pub struct Path(Vec<Move>);
+
+impl PartialEq for Path {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.len() != other.0.len() {
+			return false;
+		}
+		return (0..self.0.len()).all(|i| self.0[i] == other.0[i]);
+    }
+}
+
+impl Eq for Path {}
+
+impl std::hash::Hash for Path {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+		let mut hasher = DefaultHasher::new();
+		self.0.hash(&mut hasher);
+    }
+}
+
+impl Path {
+
+	pub fn new(moves: Vec<Move>) -> Self {
+		Self(moves)
+	}
+
+	pub fn empty() -> Self {
+		Self(Vec::new())
+	}
+
+	pub fn len(&self) -> usize {
+		self.0.len()
+	}
+
+	pub fn get(&self, n: usize) -> Move {
+		self.0[n]
+	}
+
+	pub fn get_ending_square_or_default_if_empty(&self, default: Square) -> Square {
+		self.get_ending_square().unwrap_or(default)
+	}
+
+	pub fn get_ending_square(&self) -> Option<Square> {
+		if self.len() == 0 {
+			return None;
+		}
+		return Some(self.0[self.len() - 1].1);
+	}
+
+	pub fn push(&mut self, m: Move) {
+		self.0.push(m);
+	}
+
+	pub fn to_postpended(&self, m: Move) -> Self {
+		let mut vec = self.0.clone();
+		vec.push(m);
+		return Self::new(vec);
+	}
+
+	pub fn to_prepended(&self, m: Move) -> Self {
+		let mut vec = vec![m];
+		vec.append(&mut self.0.clone());
+		return Self::new(vec);
+	}
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Piece {
 	Pawn,
@@ -1108,6 +1193,32 @@ impl Piece {
 		}
 	}
 
+	pub fn get_random() -> Self {
+		*Self::all().iter().choose(&mut thread_rng()).unwrap()
+	}
+
+	pub fn get_random_non_pawn() -> Self {
+		*Self::all_non_pawn().iter().choose(&mut thread_rng()).unwrap()
+	}
+
+	pub fn try_parse(s: String) -> Result<Self, String> {
+		let c = match s.to_uppercase().chars().nth(0) {
+			None => return Err("Expected a piece but got an empty string.".to_string()),
+			Some(character) => character,
+		};
+		match Self::is_piece_char(c) {
+			true => Ok(Self::from_char(c)),
+			false => Err(format!("{} is not a valid piece.", c)),
+		}
+	}
+
+	pub fn is_piece_char(c: char) -> bool {
+		match c {
+			'P' | 'N' | 'B' | 'R' | 'Q' | 'K' => true,
+			_ => false,
+		}
+	}
+
 	pub fn to_string(&self) -> String {
 		match self {
 			Piece::Pawn => "P".to_string(),
@@ -1116,6 +1227,17 @@ impl Piece {
 			Piece::Rook => "R".to_string(),
 			Piece::Queen => "Q".to_string(),
 			Piece::King => "K".to_string(),
+		}
+	}
+
+	pub fn to_long_string(&self) -> String {
+		match self {
+			Piece::Pawn => "Pawn".to_string(),
+			Piece::Knight => "Knight".to_string(),
+			Piece::Bishop => "Bishop".to_string(),
+			Piece::Rook => "Rook".to_string(),
+			Piece::Queen => "Queen".to_string(),
+			Piece::King => "King".to_string(),
 		}
 	}
 
@@ -1128,6 +1250,102 @@ impl Piece {
 			Piece::Queen,
 			Piece::King
 		]
+	}
+
+	pub fn all_non_pawn() -> Vec<Self> {
+		vec![
+			Piece::Knight,
+			Piece::Bishop,
+			Piece::Rook,
+			Piece::Queen,
+			Piece::King
+		]
+	}
+
+	pub fn get_shortest_paths(&self, start: Square, end: Square) -> HashSet<Path> {
+		let board = Board::singleton(Side::White, *self, start);
+		let mut calculator = ShortestPathCalculator::new(board, start, end);
+		calculator.calculate()
+	}
+}
+
+#[derive(Debug)]
+pub struct ShortestPathCalculator {
+	board: Board,
+	starting_position: Square,
+	ending_position: Square,
+	candidates: VecDeque<Path>,
+	results: HashSet<Path>,
+	shortest_so_far: usize,
+}
+
+impl ShortestPathCalculator {
+
+	pub fn new(board: Board, starting_position: Square, ending_position: Square) -> Self {
+		if board.get(starting_position).is_none() {
+			panic!("Starting position must have a piece on it.");
+		}
+
+		let candidates: VecDeque<Path> = vec![Path::empty()].into_iter().collect();
+
+		Self {
+			board,
+			starting_position,
+			ending_position,
+			candidates,
+			results: HashSet::new(),
+			shortest_so_far: 99,
+		}
+	}
+
+	pub fn calculate(&mut self) -> HashSet<Path> {
+		
+		let piece = self.board.get(self.starting_position).unwrap().1;
+
+		match piece {
+			Piece::King | Piece::Queen | Piece::Rook | Piece::Bishop | Piece::Knight => {
+				if (piece == Piece::Bishop) && (self.starting_position.get_color() != self.ending_position.get_color()) {
+					return HashSet::new();
+				}
+
+				if self.starting_position == self.ending_position {
+					self.results = vec![Path::empty()].into_iter().collect();
+					return self.results.clone();
+				}
+				
+				while let Some(next_candidate) = self.candidates.pop_front() {
+
+					if (self.results.len() > 0) && (next_candidate.len() >= self.shortest_so_far) {
+						return self.results.clone();
+					}
+
+					let mut resulting_board = self.board.clone();
+					resulting_board.make_moves(next_candidate.clone().0);
+					let ending_square = next_candidate.get_ending_square_or_default_if_empty(self.starting_position);
+					self.check_layer(next_candidate, resulting_board, ending_square);
+				}
+				panic!["Couldn't find shortest path!"];
+				
+			},
+			Piece::Pawn => panic!("Shortest path for Pawns isn't well defined!"),
+		}
+	}
+
+	fn check_layer(&mut self, head: Path, board: Board, square: Square) {
+		let new_candidates = board.get_legal_moves(square);
+		for candidate in new_candidates {
+			let mut path = head.clone();
+			path.push(candidate);
+			if candidate.1 == self.ending_position {
+				self.results.insert(path.clone());
+				self.update_shortest_so_far(path.len())
+			}
+			self.candidates.push_back(path)
+		}
+	}
+
+	fn update_shortest_so_far(&mut self, l: usize) {
+		self.shortest_so_far = if l < self.shortest_so_far { l } else { self.shortest_so_far };
 	}
 }
 
@@ -2141,5 +2359,47 @@ mod tests {
 		assert_eq!(Square::from_string("g2").get_color(), SquareColor::Light);
 		assert_eq!(Square::from_string("a1").get_color(), SquareColor::Dark);
 		assert_eq!(Square::from_string("d5").get_color(), SquareColor::Light);
+	}
+
+	#[test]
+	fn path_gets_shortest_path() {
+		
+		assert_eq!(
+			Piece::Rook.get_shortest_paths(Square::from_string("e3"), Square::from_string("e3")),
+			vec![Path::new(Vec::new())].into_iter().collect()
+		);
+		
+		assert_eq!(
+			Piece::Rook.get_shortest_paths(Square::from_string("a3"), Square::from_string("e3")),
+			vec![Path::new(vec![Move::new(Square::from_string("a3"), Square::from_string("e3"))])].into_iter().collect()
+		);
+		
+		assert_eq!(
+			Piece::Bishop.get_shortest_paths(Square::from_string("a3"), Square::from_string("f8")),
+			vec![Path::new(vec![Move::new(Square::from_string("a3"), Square::from_string("f8"))])].into_iter().collect()
+		);
+
+		assert_eq!(
+			Piece::Bishop.get_shortest_paths(Square::from_string("a3"), Square::from_string("f7")),
+			HashSet::new()
+		);
+
+		assert_eq!(
+			Piece::Rook.get_shortest_paths(Square::from_string("g2"), Square::from_string("h8")),
+			vec![
+				Path::new(
+					vec![
+						Move::new(Square::from_string("g2"), Square::from_string("h2")),
+						Move::new(Square::from_string("h2"), Square::from_string("h8")),
+					]
+				),
+				Path::new(
+					vec![
+						Move::new(Square::from_string("g2"), Square::from_string("g8")),
+						Move::new(Square::from_string("g8"), Square::from_string("h8")),
+					]
+				),
+			].into_iter().collect()
+		);
 	}
 }
