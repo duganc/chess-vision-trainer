@@ -682,7 +682,9 @@ impl TrainerResponseEvaluator {
 				if shortest_paths.contains(&Path::new(moves)) {
 					return Ok(format!("Correct!"));
 				} else {
-					return Err(format!("Incorrect!  Correct answers are: {:#?}", shortest_paths));
+					let board = Board::singleton(Side::White, *piece, *starting_square);
+					let expected: Vec<String> = shortest_paths.into_iter().map(|x| x.to_move_strings(&board)).collect();
+					return Err(format!("Incorrect!  Correct answers are: {:#?}", expected));
 				}
 			}
 		}

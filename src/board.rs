@@ -1135,6 +1135,16 @@ impl Path {
 		self.0[n]
 	}
 
+	pub fn to_move_strings(&self, board: &Board) -> String {
+		let mut temp_board = board.clone();
+		let mut move_strings = Vec::new();
+		for m in self.0.clone() {
+			move_strings.push(temp_board.get_move_string(m));
+			temp_board.make_move(m);
+		}
+		move_strings.join(",")
+	}
+
 	pub fn get_ending_square_or_default_if_empty(&self, default: Square) -> Square {
 		self.get_ending_square().unwrap_or(default)
 	}
