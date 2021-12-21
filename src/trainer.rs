@@ -340,7 +340,9 @@ impl TrainerBuilder {
 			TrainerMode::ShortestPath(piece) => {
 				let starting_square = Square::get_random();
 				let mut ending_square = Square::get_random();
-				while piece == Piece::Bishop && (starting_square.get_color() != ending_square.get_color()) {
+				let is_impossible_bishop_move = |e: Square| (piece == Piece::Bishop) && (starting_square.get_color() != e.get_color());
+				let is_same_square = |e| (starting_square == e);
+				while is_impossible_bishop_move(ending_square) || is_same_square(ending_square) {
 					ending_square = Square::get_random();
 				}
 				vec![
