@@ -104,7 +104,7 @@ fn main() {
 				)
 		).subcommand(
 			SubCommand::with_name("path")
-				.about("Give the shortest path for a random piece between two random squares.")
+				.about("Can you give the shortest path for a random piece between two random squares.")
 				.arg(
 					Arg::with_name("blindfold")
 						.short("b")
@@ -121,7 +121,7 @@ fn main() {
 				)
 		).subcommand(
 			SubCommand::with_name("color")
-				.about("Can you identify the 3 most attacked pieces or squares?")
+				.about("Can you identify the color of a random square?")
 		).get_matches();
 
 	if let Some(_matches) = matches.subcommand_matches("checks") {

@@ -1212,9 +1212,10 @@ impl Piece {
 	}
 
 	pub fn try_parse(s: String) -> Result<Self, String> {
-		let c = match s.to_uppercase().chars().nth(0) {
-			None => return Err("Expected a piece but got an empty string.".to_string()),
-			Some(character) => character,
+		let c = match s.to_uppercase().as_str() {
+			"" => return Err("Expected a piece but got an empty string.".to_string()),
+			"KNIGHT" => 'N',
+			x => x.chars().nth(0).unwrap(),
 		};
 		match Self::is_piece_char(c) {
 			true => Ok(Self::from_char(c)),
