@@ -174,6 +174,9 @@ impl Board {
 		self.pieces().is_occupied(square)
 	}
 
+	pub fn fen(&self, side: Side, half_moves: usize, full_moves: usize) -> String {
+		Fen::new(&self, side, half_moves, full_moves).to_string()
+	}
 
 	pub fn get(&self, square: Square) -> Option<(Side, Piece)> {
 		match self.is_occupied(square) {
@@ -978,6 +981,120 @@ impl Board {
 
 }
 
+struct Fen {
+	pieces: String,
+	side: Side,
+	castling: String,
+	en_passant: Option<Square>,
+	half_moves: usize,
+	full_moves: usize,
+}
+
+impl Fen {
+
+	fn new(board: &Board, side: Side, half_moves: usize, full_moves: usize) -> Self {
+		Self {
+			pieces: Self::get_pieces(board),
+			side: side,
+			castling: Self::get_castling(board),
+			en_passant: Self::get_en_passant(board),
+			half_moves: half_moves,
+			full_moves: full_moves,
+		}
+	}
+
+	fn to_string(&self) -> String {
+		let side = match self.side {
+			Side::White => "w",
+			Side::Black => "b",
+		}.to_string();
+		let en_passant = match self.en_passant {
+			None => "-".to_string(),
+			Some(s) => s.to_string(),
+		};
+		let strings = vec![
+			self.pieces.clone(),
+			side,
+			self.castling.clone(),
+			en_passant,
+			self.half_moves.to_string(),
+			self.full_moves.to_string(),
+		];
+		return strings.join(" ");
+	}
+
+	fn get_pieces(board: &Board) -> String {
+		let mut to_return = Vec::new();
+		for rank in Rank::all().into_iter().rev() {
+			let mut rank_strings = Vec::new();
+			let mut empty_files = 0;
+			for file in File::all() {
+				let square = Square::new(file, rank);
+				let (rank_string, new_empty_files) = Self::get_piece_string(square, board.get(square), empty_files);
+				empty_files = new_empty_files;
+				rank_strings.push(rank_string);
+			}
+			to_return.push(rank_strings.join(""));
+		}
+		return to_return.join("/");
+	}
+
+	fn get_piece_string(square: Square, maybe_side_piece: Option<(Side, Piece)>, empty_files: usize) -> (String, usize) {
+		let mut counter = empty_files;
+		let counter_string = if counter == 0 {
+			"".to_string()
+		} else {
+			counter.to_string()
+		};
+		match maybe_side_piece {
+			None => {
+				counter += 1;
+				(if square.file() == File::H {counter.to_string()} else {"".to_string()}, counter)
+			},
+			Some((Side::White, piece)) => (format!("{}{}", counter_string, piece.to_string().to_uppercase()), 0),
+			Some((Side::Black, piece)) => (format!("{}{}", counter_string, piece.to_string().to_lowercase()), 0),
+		}
+	}
+
+	fn get_en_passant(board: &Board) -> Option<Square> {
+		// TODO: Implement en passant!
+		return None;
+	}
+
+	fn get_castling(board: &Board) -> String {
+		let mut to_return = Vec::new();
+		if board.castling_rights_white_kingside {
+			to_return.push("K");
+		}
+		if board.castling_rights_white_queenside {
+			to_return.push("Q");
+		}
+		if board.castling_rights_black_kingside {
+			to_return.push("k");
+		}
+		if board.castling_rights_black_queenside {
+			to_return.push("q");
+		}
+
+		if to_return.len() == 0 {
+			return "-".to_string();
+		} else {
+			return to_return.join("");
+		}
+	}
+
+	fn get_castle_type(castles: Vec<Castle>) -> String {
+		let mut to_return = Vec::new();
+		if castles.contains(&Castle::Kingside) {
+			to_return.push("K".to_string());
+		}
+		if castles.contains(&Castle::Queenside) {
+			to_return.push("Q".to_string());
+		}
+		return to_return.join("");
+	}
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Castle {
 	Kingside,
@@ -1618,6 +1735,19 @@ impl File {
 			File::F => "f".to_string(),
 			File::G => "g".to_string(),
 			File::H => "h".to_string(),
+		}
+	}
+
+	pub fn to_number(&self) -> i8 {
+		match self {
+			File::A => 1,
+			File::B => 2,
+			File::C => 3,
+			File::D => 4,
+			File::E => 5,
+			File::F => 6,
+			File::G => 7,
+			File::H => 8,
 		}
 	}
 
@@ -2278,6 +2408,22 @@ mod tests {
 		assert!(!board.is_occupied(Square::new(File::C, Rank::One)));
 		assert!(!board.is_occupied(Square::new(File::H, Rank::Eight)));
 		assert!(board.is_occupied(Square::new(File::G, Rank::Seven)));
+	}
+
+	#[test]
+	fn test_board_gets_fen() {
+		let mut board = Board::starting_position();
+		assert_eq!(board.fen(Side::White, 0, 1), "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+
+		board.make_move(board.force_parse_move(Side::White, "d4"));
+		board.make_move(board.force_parse_move(Side::Black, "d5"));
+		board.make_move(board.force_parse_move(Side::White, "c4"));
+		board.make_move(board.force_parse_move(Side::Black, "e6"));
+		board.make_move(board.force_parse_move(Side::White, "Nc3"));
+		board.make_move(board.force_parse_move(Side::Black, "Nf6"));
+
+		assert_eq!(board.fen(Side::White, 2, 4), "rnbqkb1r/ppp2ppp/4pn2/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR w KQkq - 2 4");
+		
 	}
 
 	#[test]

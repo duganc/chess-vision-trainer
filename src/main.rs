@@ -7,6 +7,7 @@ mod game;
 mod board;
 mod trainer;
 mod color;
+mod evaluation;
 
 use clap::{App, SubCommand, Arg};
 use text_io::read;
