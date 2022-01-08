@@ -7,8 +7,10 @@ mod game;
 mod board;
 mod trainer;
 mod color;
+mod evaluation;
 
 use clap::{App, SubCommand, Arg};
+use evaluation::Evaluator;
 use text_io::read;
 use std::collections::{HashSet};
 use crate::trainer::{Trainer, TrainerMode, Target};
@@ -122,6 +124,15 @@ fn main() {
 		).subcommand(
 			SubCommand::with_name("color")
 				.about("Can you identify the color of a random square?")
+			).subcommand(
+				SubCommand::with_name("evaluate")
+					.about("Evaluate the position using Pleco")
+					.arg(
+						Arg::with_name("fen")
+						.short("f")
+						.long("fen")
+						.takes_value(true)
+					)
 		).get_matches();
 
 	if let Some(_matches) = matches.subcommand_matches("checks") {
@@ -210,6 +221,16 @@ fn main() {
 		let mut builder = Trainer::builder(TrainerMode::Color);
 		let mut trainer = builder.build();
 		trainer.run();
+	} else if let Some(matches) = matches.subcommand_matches("evaluate") {
+		match matches.value_of("fen") {
+			None => println!("No FEN provided!"),
+			Some(fen) => {
+				match Evaluator::evaluate_from_fen(fen.to_string()) {
+					Ok(eval) => println!("Evaluation: {:?}", eval),
+					Err(s) => println!("{}", s),
+				}
+			}
+		}
 	} else {
 		panic!("Invalid subcommand");
 	}
